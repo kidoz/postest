@@ -26,6 +26,13 @@ class ManageCollectionsUseCase(
         collectionRepository.deleteCollection(collectionId)
     }
 
+    suspend fun renameCollection(
+        collectionId: String,
+        newName: String,
+    ) {
+        collectionRepository.renameCollection(collectionId, newName)
+    }
+
     suspend fun addRequestToCollection(
         collectionId: String,
         request: HttpRequest,
@@ -42,5 +49,12 @@ class ManageCollectionsUseCase(
 
     suspend fun deleteCollectionItem(itemId: String) {
         collectionRepository.deleteCollectionItem(itemId)
+    }
+
+    suspend fun renameCollectionItem(
+        itemId: String,
+        newName: String,
+    ) {
+        collectionRepository.renameCollectionItem(itemId, newName)
     }
 }

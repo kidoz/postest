@@ -66,6 +66,9 @@ VALUES (?, ?, ?, ?, ?, ?);
 updateCollection:
 UPDATE Collection SET name = ?, description = ?, auth_json = ?, updated_at = ? WHERE id = ?;
 
+renameCollection:
+UPDATE Collection SET name = ?, updated_at = ? WHERE id = ?;
+
 deleteCollection:
 DELETE FROM Collection WHERE id = ?;
 
@@ -85,6 +88,9 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
 updateCollectionItem:
 UPDATE CollectionItem SET name = ?, description = ?, request_json = ?, position = ? WHERE id = ?;
+
+renameCollectionItem:
+UPDATE CollectionItem SET name = ? WHERE id = ?;
 
 deleteCollectionItem:
 DELETE FROM CollectionItem WHERE id = ?;

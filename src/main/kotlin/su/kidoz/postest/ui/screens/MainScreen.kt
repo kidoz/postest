@@ -35,6 +35,11 @@ fun MainScreen(
     var showNewCollectionDialog by remember { mutableStateOf(false) }
     var newCollectionName by remember { mutableStateOf("") }
 
+    // Add request to collection dialog state
+    var showAddRequestDialog by remember { mutableStateOf(false) }
+    var addRequestTargetCollection by remember { mutableStateOf<RequestCollection?>(null) }
+    var newRequestName by remember { mutableStateOf("") }
+
     // File picker for import
     val openImportDialog = {
         val fileChooser =
@@ -115,12 +120,21 @@ fun MainScreen(
                         },
                         onNewCollection = { showNewCollectionDialog = true },
                         onNewRequest = { collection ->
-                            viewModel.addRequestToCollection(collection)
+                            // Show dialog to enter request name
+                            addRequestTargetCollection = collection
+                            newRequestName = state.activeTab?.request?.name ?: ""
+                            showAddRequestDialog = true
                         },
                         onImportCollection = openImportDialog,
                         onExportCollection = openExportDialog,
+                        onRenameCollection = { collection, newName ->
+                            viewModel.renameCollection(collection.id, newName)
+                        },
                         onDeleteCollection = { collection ->
                             viewModel.deleteCollection(collection.id)
+                        },
+                        onRenameItem = { item, newName ->
+                            viewModel.renameCollectionItem(item.id, newName)
                         },
                         onDeleteItem = { item ->
                             viewModel.deleteCollectionItem(item.id)
@@ -176,6 +190,53 @@ fun MainScreen(
                     onClick = {
                         showNewCollectionDialog = false
                         newCollectionName = ""
+                    },
+                ) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
+
+    // Add Request to Collection Dialog
+    if (showAddRequestDialog && addRequestTargetCollection != null) {
+        AlertDialog(
+            onDismissRequest = {
+                showAddRequestDialog = false
+                addRequestTargetCollection = null
+                newRequestName = ""
+            },
+            title = { Text("Add Request to Collection") },
+            text = {
+                OutlinedTextField(
+                    value = newRequestName,
+                    onValueChange = { newRequestName = it },
+                    label = { Text("Request Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        addRequestTargetCollection?.let { collection ->
+                            viewModel.addRequestToCollection(collection, newRequestName)
+                        }
+                        showAddRequestDialog = false
+                        addRequestTargetCollection = null
+                        newRequestName = ""
+                    },
+                    enabled = newRequestName.isNotBlank(),
+                ) {
+                    Text("Add")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showAddRequestDialog = false
+                        addRequestTargetCollection = null
+                        newRequestName = ""
                     },
                 ) {
                     Text("Cancel")

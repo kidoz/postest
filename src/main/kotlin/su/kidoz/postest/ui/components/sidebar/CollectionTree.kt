@@ -24,7 +24,9 @@ fun CollectionTree(
     onNewRequest: (RequestCollection) -> Unit,
     onImportCollection: () -> Unit,
     onExportCollection: (RequestCollection) -> Unit,
+    onRenameCollection: (RequestCollection, String) -> Unit,
     onDeleteCollection: (RequestCollection) -> Unit,
+    onRenameItem: (CollectionItem, String) -> Unit,
     onDeleteItem: (CollectionItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -124,7 +126,9 @@ fun CollectionTree(
                         onRequestClick = onRequestClick,
                         onNewRequest = { onNewRequest(collection) },
                         onExportCollection = { onExportCollection(collection) },
+                        onRenameCollection = { newName -> onRenameCollection(collection, newName) },
                         onDeleteCollection = { onDeleteCollection(collection) },
+                        onRenameItem = onRenameItem,
                         onDeleteItem = onDeleteItem,
                     )
                 }
@@ -139,12 +143,16 @@ private fun CollectionNode(
     onRequestClick: (CollectionItem.Request) -> Unit,
     onNewRequest: () -> Unit,
     onExportCollection: () -> Unit,
+    onRenameCollection: (String) -> Unit,
     onDeleteCollection: () -> Unit,
+    onRenameItem: (CollectionItem, String) -> Unit,
     onDeleteItem: (CollectionItem) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(true) }
     var showMenu by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showRenameDialog by remember { mutableStateOf(false) }
+    var newName by remember { mutableStateOf("") }
 
     Column {
         Row(
@@ -212,6 +220,17 @@ private fun CollectionNode(
                             Icon(Icons.Default.FileDownload, contentDescription = null)
                         },
                     )
+                    DropdownMenuItem(
+                        text = { Text("Rename") },
+                        onClick = {
+                            showMenu = false
+                            newName = collection.name
+                            showRenameDialog = true
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Default.Edit, contentDescription = null)
+                        },
+                    )
                     HorizontalDivider()
                     DropdownMenuItem(
                         text = { Text("Delete Collection", color = MaterialTheme.colorScheme.error) },
@@ -237,10 +256,53 @@ private fun CollectionNode(
                     item = item,
                     depth = 1,
                     onRequestClick = onRequestClick,
+                    onRenameItem = onRenameItem,
                     onDeleteItem = onDeleteItem,
                 )
             }
         }
+    }
+
+    // Rename collection dialog
+    if (showRenameDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showRenameDialog = false
+                newName = ""
+            },
+            title = { Text("Rename Collection") },
+            text = {
+                OutlinedTextField(
+                    value = newName,
+                    onValueChange = { newName = it },
+                    label = { Text("Collection Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onRenameCollection(newName)
+                        showRenameDialog = false
+                        newName = ""
+                    },
+                    enabled = newName.isNotBlank(),
+                ) {
+                    Text("Rename")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showRenameDialog = false
+                        newName = ""
+                    },
+                ) {
+                    Text("Cancel")
+                }
+            },
+        )
     }
 
     // Delete confirmation dialog
@@ -277,11 +339,14 @@ private fun CollectionItemNode(
     item: CollectionItem,
     depth: Int,
     onRequestClick: (CollectionItem.Request) -> Unit,
+    onRenameItem: (CollectionItem, String) -> Unit,
     onDeleteItem: (CollectionItem) -> Unit,
 ) {
     val extendedColors = AppTheme.extendedColors
     var showMenu by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showRenameDialog by remember { mutableStateOf(false) }
+    var newName by remember { mutableStateOf("") }
 
     when (item) {
         is CollectionItem.Request -> {
@@ -334,6 +399,18 @@ private fun CollectionItemNode(
                         onDismissRequest = { showMenu = false },
                     ) {
                         DropdownMenuItem(
+                            text = { Text("Rename") },
+                            onClick = {
+                                showMenu = false
+                                newName = item.name
+                                showRenameDialog = true
+                            },
+                            leadingIcon = {
+                                Icon(Icons.Default.Edit, contentDescription = null)
+                            },
+                        )
+                        HorizontalDivider()
+                        DropdownMenuItem(
                             text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
                             onClick = {
                                 showMenu = false
@@ -349,6 +426,48 @@ private fun CollectionItemNode(
                         )
                     }
                 }
+            }
+
+            // Rename dialog
+            if (showRenameDialog) {
+                AlertDialog(
+                    onDismissRequest = {
+                        showRenameDialog = false
+                        newName = ""
+                    },
+                    title = { Text("Rename Request") },
+                    text = {
+                        OutlinedTextField(
+                            value = newName,
+                            onValueChange = { newName = it },
+                            label = { Text("Request Name") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                onRenameItem(item, newName)
+                                showRenameDialog = false
+                                newName = ""
+                            },
+                            enabled = newName.isNotBlank(),
+                        ) {
+                            Text("Rename")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(
+                            onClick = {
+                                showRenameDialog = false
+                                newName = ""
+                            },
+                        ) {
+                            Text("Cancel")
+                        }
+                    },
+                )
             }
 
             if (showDeleteConfirm) {
@@ -428,6 +547,18 @@ private fun CollectionItemNode(
                             onDismissRequest = { showMenu = false },
                         ) {
                             DropdownMenuItem(
+                                text = { Text("Rename") },
+                                onClick = {
+                                    showMenu = false
+                                    newName = item.name
+                                    showRenameDialog = true
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Edit, contentDescription = null)
+                                },
+                            )
+                            HorizontalDivider()
+                            DropdownMenuItem(
                                 text = { Text("Delete Folder", color = MaterialTheme.colorScheme.error) },
                                 onClick = {
                                     showMenu = false
@@ -451,10 +582,53 @@ private fun CollectionItemNode(
                             item = subItem,
                             depth = depth + 1,
                             onRequestClick = onRequestClick,
+                            onRenameItem = onRenameItem,
                             onDeleteItem = onDeleteItem,
                         )
                     }
                 }
+            }
+
+            // Rename folder dialog
+            if (showRenameDialog) {
+                AlertDialog(
+                    onDismissRequest = {
+                        showRenameDialog = false
+                        newName = ""
+                    },
+                    title = { Text("Rename Folder") },
+                    text = {
+                        OutlinedTextField(
+                            value = newName,
+                            onValueChange = { newName = it },
+                            label = { Text("Folder Name") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                onRenameItem(item, newName)
+                                showRenameDialog = false
+                                newName = ""
+                            },
+                            enabled = newName.isNotBlank(),
+                        ) {
+                            Text("Rename")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(
+                            onClick = {
+                                showRenameDialog = false
+                                newName = ""
+                            },
+                        ) {
+                            Text("Cancel")
+                        }
+                    },
+                )
             }
 
             if (showDeleteConfirm) {

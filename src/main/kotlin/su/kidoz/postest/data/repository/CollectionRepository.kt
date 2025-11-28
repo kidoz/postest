@@ -129,6 +129,14 @@ class CollectionRepository(
             loadCollections()
         }
 
+    suspend fun renameCollection(
+        collectionId: String,
+        newName: String,
+    ) = withContext(Dispatchers.IO) {
+        database.postestQueries.renameCollection(newName, System.currentTimeMillis(), collectionId)
+        loadCollections()
+    }
+
     suspend fun addRequestToCollection(
         collectionId: String,
         request: HttpRequest,
@@ -204,6 +212,14 @@ class CollectionRepository(
             database.postestQueries.deleteCollectionItem(itemId)
             loadCollections()
         }
+
+    suspend fun renameCollectionItem(
+        itemId: String,
+        newName: String,
+    ) = withContext(Dispatchers.IO) {
+        database.postestQueries.renameCollectionItem(newName, itemId)
+        loadCollections()
+    }
 
     /**
      * Import a complete collection including all nested items.

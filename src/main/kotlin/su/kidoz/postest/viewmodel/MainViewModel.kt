@@ -398,16 +398,19 @@ class MainViewModel(
     }
 
     // Intent: Add request to collection
-    fun addRequestToCollection(collection: RequestCollection) {
+    fun addRequestToCollection(
+        collection: RequestCollection,
+        requestName: String,
+    ) {
         viewModelScope.launch {
             val activeTab = _state.value.activeTab ?: return@launch
-            val requestName = activeTab.request.name.ifBlank { "New Request" }
+            val name = requestName.ifBlank { "New Request" }
             manageCollectionsUseCase.addRequestToCollection(
                 collectionId = collection.id,
                 request = activeTab.request,
-                name = requestName,
+                name = name,
             )
-            _sideEffect.trySend(AppSideEffect.ShowToast("Request added to '${collection.name}'"))
+            _sideEffect.trySend(AppSideEffect.ShowToast("Request '$name' added to '${collection.name}'"))
         }
     }
 
@@ -458,11 +461,33 @@ class MainViewModel(
         }
     }
 
+    // Intent: Rename collection
+    fun renameCollection(
+        collectionId: String,
+        newName: String,
+    ) {
+        viewModelScope.launch {
+            manageCollectionsUseCase.renameCollection(collectionId, newName)
+            _sideEffect.trySend(AppSideEffect.ShowToast("Collection renamed to '$newName'"))
+        }
+    }
+
     // Intent: Delete collection item (request or folder)
     fun deleteCollectionItem(itemId: String) {
         viewModelScope.launch {
             manageCollectionsUseCase.deleteCollectionItem(itemId)
             _sideEffect.trySend(AppSideEffect.ShowToast("Item deleted"))
+        }
+    }
+
+    // Intent: Rename collection item (request or folder)
+    fun renameCollectionItem(
+        itemId: String,
+        newName: String,
+    ) {
+        viewModelScope.launch {
+            manageCollectionsUseCase.renameCollectionItem(itemId, newName)
+            _sideEffect.trySend(AppSideEffect.ShowToast("Item renamed to '$newName'"))
         }
     }
 

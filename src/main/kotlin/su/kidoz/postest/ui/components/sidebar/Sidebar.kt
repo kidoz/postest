@@ -29,7 +29,9 @@ fun Sidebar(
     onNewRequest: (RequestCollection) -> Unit,
     onImportCollection: () -> Unit,
     onExportCollection: (RequestCollection) -> Unit,
+    onRenameCollection: (RequestCollection, String) -> Unit,
     onDeleteCollection: (RequestCollection) -> Unit,
+    onRenameItem: (CollectionItem, String) -> Unit,
     onDeleteItem: (CollectionItem) -> Unit,
     onClearHistory: () -> Unit,
     onEnvironmentSelect: (String?) -> Unit,
@@ -79,7 +81,9 @@ fun Sidebar(
                         onNewRequest = onNewRequest,
                         onImportCollection = onImportCollection,
                         onExportCollection = onExportCollection,
+                        onRenameCollection = onRenameCollection,
                         onDeleteCollection = onDeleteCollection,
+                        onRenameItem = onRenameItem,
                         onDeleteItem = onDeleteItem,
                     )
                 }
