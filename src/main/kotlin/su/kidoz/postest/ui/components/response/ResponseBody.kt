@@ -12,7 +12,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 import su.kidoz.postest.ui.components.common.CodeEditor
 import su.kidoz.postest.ui.components.common.CodeLanguage
 import su.kidoz.postest.ui.components.common.JsonViewer
+import su.kidoz.postest.util.HtmlFormatter
 import su.kidoz.postest.util.JsonFormatter
+import su.kidoz.postest.util.XmlFormatter
 import kotlin.math.min
 
 enum class BodyViewMode(
@@ -128,8 +130,16 @@ fun ResponseBody(
                 BodyViewMode.PRETTY -> {
                     when (currentFormatState) {
                         FormatState.Idle -> {
+                            val prettyBody =
+                                when {
+                                    isJson -> JsonFormatter.format(body)
+                                    isHtml -> HtmlFormatter.format(body)
+                                    isXml -> XmlFormatter.format(body)
+                                    else -> body
+                                }
+
                             CodeEditor(
-                                value = body,
+                                value = prettyBody,
                                 onValueChange = {},
                                 language = codeLanguage,
                                 readOnly = true,
