@@ -1,0 +1,58 @@
+# Maintainer: Your Name <your.email@example.com>
+pkgname=postest
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="A modern REST API client built with Kotlin and Compose"
+arch=('x86_64')
+url="https://github.com/yourusername/postest"
+license=('MIT')
+depends=('java-runtime>=21' 'hicolor-icon-theme')
+makedepends=('java-environment>=21')
+source=("${pkgname}-${pkgver}.tar.gz::https://github.com/yourusername/postest/archive/v${pkgver}.tar.gz")
+sha256sums=('SKIP')
+
+# For local builds, comment out source above and use:
+# source=()
+# And copy project files to src/ directory
+
+build() {
+    cd "${srcdir}/${pkgname}-${pkgver}"
+
+    # Build the application
+    ./gradlew --no-daemon createDistributable
+}
+
+package() {
+    cd "${srcdir}/${pkgname}-${pkgver}"
+
+    # Install application files
+    install -dm755 "${pkgdir}/opt/${pkgname}"
+    cp -r build/compose/binaries/main/app/Postest/* "${pkgdir}/opt/${pkgname}/"
+
+    # Install launcher script
+    install -Dm755 /dev/stdin "${pkgdir}/usr/bin/${pkgname}" << 'EOF'
+#!/bin/bash
+exec /opt/postest/bin/Postest "$@"
+EOF
+
+    # Install desktop entry
+    install -Dm644 /dev/stdin "${pkgdir}/usr/share/applications/${pkgname}.desktop" << EOF
+[Desktop Entry]
+Name=Postest
+Comment=A modern REST API client
+Exec=/usr/bin/${pkgname}
+Icon=${pkgname}
+Terminal=false
+Type=Application
+Categories=Development;Network;
+Keywords=REST;API;HTTP;Client;
+StartupWMClass=postest
+EOF
+
+    # Install icons
+    install -Dm644 "src/main/resources/icon.png" \
+        "${pkgdir}/usr/share/icons/hicolor/512x512/apps/${pkgname}.png"
+
+    # Install license
+    install -Dm644 "LICENSE" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}

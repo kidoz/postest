@@ -1,0 +1,147 @@
+-- Collections table
+CREATE TABLE Collection (
+    id TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    auth_json TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+-- Collection items (requests and folders)
+CREATE TABLE CollectionItem (
+    id TEXT NOT NULL PRIMARY KEY,
+    collection_id TEXT NOT NULL,
+    parent_folder_id TEXT,
+    type TEXT NOT NULL, -- 'request' or 'folder'
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    request_json TEXT, -- JSON serialized HttpRequest for request type
+    position INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (collection_id) REFERENCES Collection(id) ON DELETE CASCADE,
+    FOREIGN KEY (parent_folder_id) REFERENCES CollectionItem(id) ON DELETE CASCADE
+);
+
+-- Environments table
+CREATE TABLE Environment (
+    id TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+-- Environment variables
+CREATE TABLE EnvironmentVariable (
+    id TEXT NOT NULL PRIMARY KEY,
+    environment_id TEXT NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    is_secret INTEGER NOT NULL DEFAULT 0,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    FOREIGN KEY (environment_id) REFERENCES Environment(id) ON DELETE CASCADE
+);
+
+-- History entries
+CREATE TABLE HistoryEntry (
+    id TEXT NOT NULL PRIMARY KEY,
+    request_json TEXT NOT NULL,
+    response_json TEXT,
+    error_message TEXT,
+    duration INTEGER NOT NULL,
+    timestamp INTEGER NOT NULL
+);
+
+-- Collection Queries
+selectAllCollections:
+SELECT * FROM Collection ORDER BY updated_at DESC;
+
+selectCollectionById:
+SELECT * FROM Collection WHERE id = ?;
+
+insertCollection:
+INSERT INTO Collection(id, name, description, auth_json, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?);
+
+updateCollection:
+UPDATE Collection SET name = ?, description = ?, auth_json = ?, updated_at = ? WHERE id = ?;
+
+deleteCollection:
+DELETE FROM Collection WHERE id = ?;
+
+-- Collection Item Queries
+selectItemsByCollectionId:
+SELECT * FROM CollectionItem WHERE collection_id = ? ORDER BY position;
+
+selectItemsByParentFolderId:
+SELECT * FROM CollectionItem WHERE parent_folder_id = ? ORDER BY position;
+
+selectRootItemsByCollectionId:
+SELECT * FROM CollectionItem WHERE collection_id = ? AND parent_folder_id IS NULL ORDER BY position;
+
+insertCollectionItem:
+INSERT INTO CollectionItem(id, collection_id, parent_folder_id, type, name, description, request_json, position)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+updateCollectionItem:
+UPDATE CollectionItem SET name = ?, description = ?, request_json = ?, position = ? WHERE id = ?;
+
+deleteCollectionItem:
+DELETE FROM CollectionItem WHERE id = ?;
+
+-- Environment Queries
+selectAllEnvironments:
+SELECT * FROM Environment ORDER BY name;
+
+selectEnvironmentById:
+SELECT * FROM Environment WHERE id = ?;
+
+selectActiveEnvironment:
+SELECT * FROM Environment WHERE is_active = 1 LIMIT 1;
+
+insertEnvironment:
+INSERT INTO Environment(id, name, is_active, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?);
+
+updateEnvironment:
+UPDATE Environment SET name = ?, is_active = ?, updated_at = ? WHERE id = ?;
+
+deleteEnvironment:
+DELETE FROM Environment WHERE id = ?;
+
+deactivateAllEnvironments:
+UPDATE Environment SET is_active = 0;
+
+activateEnvironment:
+UPDATE Environment SET is_active = 1 WHERE id = ?;
+
+-- Environment Variable Queries
+selectVariablesByEnvironmentId:
+SELECT * FROM EnvironmentVariable WHERE environment_id = ?;
+
+insertEnvironmentVariable:
+INSERT INTO EnvironmentVariable(id, environment_id, key, value, is_secret, enabled)
+VALUES (?, ?, ?, ?, ?, ?);
+
+updateEnvironmentVariable:
+UPDATE EnvironmentVariable SET key = ?, value = ?, is_secret = ?, enabled = ? WHERE id = ?;
+
+deleteEnvironmentVariable:
+DELETE FROM EnvironmentVariable WHERE id = ?;
+
+deleteVariablesByEnvironmentId:
+DELETE FROM EnvironmentVariable WHERE environment_id = ?;
+
+-- History Queries
+selectAllHistory:
+SELECT * FROM HistoryEntry ORDER BY timestamp DESC LIMIT 100;
+
+insertHistoryEntry:
+INSERT INTO HistoryEntry(id, request_json, response_json, error_message, duration, timestamp)
+VALUES (?, ?, ?, ?, ?, ?);
+
+deleteHistoryEntry:
+DELETE FROM HistoryEntry WHERE id = ?;
+
+clearHistory:
+DELETE FROM HistoryEntry;

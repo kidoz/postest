@@ -1,0 +1,107 @@
+build:
+  maxIssues: 0
+  excludes: 'build/'
+
+config:
+  validation: true
+
+processors:
+  active: true
+
+console-reports:
+  active: true
+  exclude:
+    - 'ProjectStatisticsReport'
+    - 'ComplexityReport'
+
+comments:
+  UndocumentedPublicClass:
+    active: false
+  UndocumentedPublicFunction:
+    active: false
+  UndocumentedPublicProperty:
+    active: false
+
+complexity:
+  CyclomaticComplexMethod:
+    active: true
+    threshold: 50
+    ignoreAnnotated: ['Composable']
+  LongMethod:
+    active: false
+  LargeClass:
+    active: false
+  LongParameterList:
+    active: false
+  TooManyFunctions:
+    active: false
+  ComplexCondition:
+    active: true
+    threshold: 8
+  NestedBlockDepth:
+    active: true
+    threshold: 7
+  NestedScopeFunctions:
+    active: false
+
+naming:
+  PackageNaming:
+    active: true
+    packagePattern: 'su\.kidoz\.postest(\..+)?'
+  FunctionNaming:
+    active: true
+    ignoreAnnotated: ['Composable']
+  MatchingDeclarationName:
+    active: false
+  ObjectPropertyNaming:
+    active: false
+
+performance:
+  SpreadOperator:
+    active: false
+
+potential-bugs:
+  LateinitUsage:
+    active: false
+
+exceptions:
+  TooGenericExceptionCaught:
+    active: false
+  TooGenericExceptionThrown:
+    active: false
+  SwallowedException:
+    active: false
+
+style:
+  ThrowsCount:
+    active: true
+    max: 6
+  MagicNumber:
+    active: false
+  WildcardImport:
+    active: false
+  MaxLineLength:
+    active: true
+    maxLineLength: 140
+    excludePackageStatements: true
+    excludeImportStatements: true
+  ForbiddenComment:
+    active: false
+  OptionalUnit:
+    active: true
+  UnusedPrivateMember:
+    active: true
+    ignoreAnnotated: ['Preview', 'Composable', 'TestOnly', 'Ignore']
+  UnnecessaryAbstractClass:
+    active: false
+  UnusedParameter:
+    active: false
+  ReturnCount:
+    active: true
+    max: 6
+  UseCheckOrError:
+    active: false
+  LoopWithTooManyJumpStatements:
+    active: false
+  UnusedPrivateProperty:
+    active: true
