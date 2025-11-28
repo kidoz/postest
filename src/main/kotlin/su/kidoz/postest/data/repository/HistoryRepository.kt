@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -23,6 +24,10 @@ class HistoryRepository(
     private val _history = MutableStateFlow<List<HistoryEntry>>(emptyList())
     val history: Flow<List<HistoryEntry>> = _history.asStateFlow()
 
+    /**
+     * Initial load of history from database.
+     * Called once at startup.
+     */
     suspend fun loadHistory() =
         withContext(Dispatchers.IO) {
             val dbHistory = database.postestQueries.selectAllHistory().executeAsList()
@@ -46,25 +51,48 @@ class HistoryRepository(
             result
         }
 
+    /**
+     * Adds a history entry.
+     * Uses incremental update - prepends to existing list instead of full reload.
+     */
     suspend fun addHistoryEntry(entry: HistoryEntry) =
         withContext(Dispatchers.IO) {
+            val entryId = entry.id.ifBlank { UUID.randomUUID().toString() }
+            val entryWithId = if (entry.id.isBlank()) entry.copy(id = entryId) else entry
+
             database.postestQueries.insertHistoryEntry(
-                id = entry.id.ifBlank { UUID.randomUUID().toString() },
+                id = entryId,
                 request_json = json.encodeToString(entry.request),
                 response_json = entry.response?.let { json.encodeToString(it) },
                 error_message = entry.errorMessage,
                 duration = entry.duration,
                 timestamp = entry.timestamp,
             )
-            loadHistory()
+
+            // Incremental update: prepend new entry (history is ordered newest first)
+            _history.update { currentHistory ->
+                listOf(entryWithId) + currentHistory
+            }
         }
 
+    /**
+     * Deletes a history entry.
+     * Uses incremental update - filters out the entry instead of full reload.
+     */
     suspend fun deleteHistoryEntry(entryId: String) =
         withContext(Dispatchers.IO) {
             database.postestQueries.deleteHistoryEntry(entryId)
-            loadHistory()
+
+            // Incremental update: remove the deleted entry
+            _history.update { currentHistory ->
+                currentHistory.filter { it.id != entryId }
+            }
         }
 
+    /**
+     * Clears all history.
+     * Already optimized - just clears the in-memory list.
+     */
     suspend fun clearHistory() =
         withContext(Dispatchers.IO) {
             database.postestQueries.clearHistory()

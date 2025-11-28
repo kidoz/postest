@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -84,6 +85,10 @@ class CollectionRepository(
         }
     }
 
+    /**
+     * Creates a new collection.
+     * Uses incremental update - appends to existing list instead of full reload.
+     */
     suspend fun createCollection(
         name: String,
         description: String = "",
@@ -107,10 +112,18 @@ class CollectionRepository(
                 updated_at = collection.updatedAt,
             )
 
-            loadCollections()
+            // Incremental update: append new collection
+            _collections.update { currentList ->
+                currentList + collection
+            }
+
             collection
         }
 
+    /**
+     * Updates an existing collection.
+     * Uses incremental update - replaces the specific collection instead of full reload.
+     */
     suspend fun updateCollection(collection: RequestCollection) =
         withContext(Dispatchers.IO) {
             database.postestQueries.updateCollection(
@@ -120,23 +133,52 @@ class CollectionRepository(
                 auth_json = collection.auth?.let { json.encodeToString(it) },
                 updated_at = System.currentTimeMillis(),
             )
-            loadCollections()
+
+            // Incremental update: replace the updated collection
+            _collections.update { currentList ->
+                currentList.map { c ->
+                    if (c.id == collection.id) collection else c
+                }
+            }
         }
 
+    /**
+     * Deletes a collection.
+     * Uses incremental update - filters out the collection instead of full reload.
+     */
     suspend fun deleteCollection(collectionId: String) =
         withContext(Dispatchers.IO) {
             database.postestQueries.deleteCollection(collectionId)
-            loadCollections()
+
+            // Incremental update: remove the deleted collection
+            _collections.update { currentList ->
+                currentList.filter { it.id != collectionId }
+            }
         }
 
+    /**
+     * Renames a collection.
+     * Uses incremental update - updates the specific collection instead of full reload.
+     */
     suspend fun renameCollection(
         collectionId: String,
         newName: String,
     ) = withContext(Dispatchers.IO) {
-        database.postestQueries.renameCollection(newName, System.currentTimeMillis(), collectionId)
-        loadCollections()
+        val updatedAt = System.currentTimeMillis()
+        database.postestQueries.renameCollection(newName, updatedAt, collectionId)
+
+        // Incremental update: update the collection name
+        _collections.update { currentList ->
+            currentList.map { c ->
+                if (c.id == collectionId) c.copy(name = newName, updatedAt = updatedAt) else c
+            }
+        }
     }
 
+    /**
+     * Adds a request to a collection.
+     * Uses incremental update - adds to nested structure instead of full reload.
+     */
     suspend fun addRequestToCollection(
         collectionId: String,
         request: HttpRequest,
@@ -168,10 +210,27 @@ class CollectionRepository(
                 position = position.toLong(),
             )
 
-            loadCollections()
+            // Incremental update: add item to collection's nested structure
+            _collections.update { currentList ->
+                currentList.map { c ->
+                    if (c.id == collectionId) {
+                        c.copy(
+                            items = addItemToCollection(c.items, item, parentFolderId),
+                            updatedAt = System.currentTimeMillis(),
+                        )
+                    } else {
+                        c
+                    }
+                }
+            }
+
             item
         }
 
+    /**
+     * Adds a folder to a collection.
+     * Uses incremental update - adds to nested structure instead of full reload.
+     */
     suspend fun addFolderToCollection(
         collectionId: String,
         name: String,
@@ -203,27 +262,71 @@ class CollectionRepository(
                 position = position.toLong(),
             )
 
-            loadCollections()
+            // Incremental update: add folder to collection's nested structure
+            _collections.update { currentList ->
+                currentList.map { c ->
+                    if (c.id == collectionId) {
+                        c.copy(
+                            items = addItemToCollection(c.items, folder, parentFolderId),
+                            updatedAt = System.currentTimeMillis(),
+                        )
+                    } else {
+                        c
+                    }
+                }
+            }
+
             folder
         }
 
+    /**
+     * Deletes a collection item (request or folder).
+     * Uses incremental update - removes from nested structure instead of full reload.
+     */
     suspend fun deleteCollectionItem(itemId: String) =
         withContext(Dispatchers.IO) {
             database.postestQueries.deleteCollectionItem(itemId)
-            loadCollections()
+
+            // Incremental update: remove item from all collections' nested structures
+            _collections.update { currentList ->
+                currentList.map { c ->
+                    val newItems = removeItemFromCollection(c.items, itemId)
+                    if (newItems != c.items) {
+                        c.copy(items = newItems, updatedAt = System.currentTimeMillis())
+                    } else {
+                        c
+                    }
+                }
+            }
         }
 
+    /**
+     * Renames a collection item (request or folder).
+     * Uses incremental update - updates in nested structure instead of full reload.
+     */
     suspend fun renameCollectionItem(
         itemId: String,
         newName: String,
     ) = withContext(Dispatchers.IO) {
         database.postestQueries.renameCollectionItem(newName, itemId)
-        loadCollections()
+
+        // Incremental update: rename item in all collections' nested structures
+        _collections.update { currentList ->
+            currentList.map { c ->
+                val newItems = renameItemInCollection(c.items, itemId, newName)
+                if (newItems != c.items) {
+                    c.copy(items = newItems, updatedAt = System.currentTimeMillis())
+                } else {
+                    c
+                }
+            }
+        }
     }
 
     /**
      * Import a complete collection including all nested items.
      * Used for importing collections from external formats (e.g., Postman).
+     * Uses incremental update - appends to existing list instead of full reload.
      */
     suspend fun importCollection(collection: RequestCollection): RequestCollection =
         withContext(Dispatchers.IO) {
@@ -242,7 +345,11 @@ class CollectionRepository(
             // Insert all items recursively
             insertItemsRecursively(collection.id, collection.items, parentFolderId = null)
 
-            loadCollections()
+            // Incremental update: append imported collection
+            _collections.update { currentList ->
+                currentList + collection
+            }
+
             collection
         }
 
@@ -282,4 +389,74 @@ class CollectionRepository(
             }
         }
     }
+
+    // ========== Helper functions for incremental updates on nested structures ==========
+
+    /**
+     * Adds an item to a collection's nested structure.
+     * If parentFolderId is null, adds to root level.
+     * If parentFolderId is specified, adds inside that folder.
+     */
+    private fun addItemToCollection(
+        items: List<CollectionItem>,
+        newItem: CollectionItem,
+        parentFolderId: String?,
+    ): List<CollectionItem> =
+        if (parentFolderId == null) {
+            // Add to root level
+            items + newItem
+        } else {
+            // Find the parent folder and add to it
+            items.map { item ->
+                when (item) {
+                    is CollectionItem.Folder ->
+                        if (item.id == parentFolderId) {
+                            item.copy(items = item.items + newItem)
+                        } else {
+                            item.copy(items = addItemToCollection(item.items, newItem, parentFolderId))
+                        }
+                    is CollectionItem.Request -> item
+                }
+            }
+        }
+
+    /**
+     * Removes an item from a collection's nested structure by ID.
+     * Recursively searches through folders.
+     */
+    private fun removeItemFromCollection(
+        items: List<CollectionItem>,
+        itemId: String,
+    ): List<CollectionItem> =
+        items
+            .filter { it.id != itemId }
+            .map { item ->
+                when (item) {
+                    is CollectionItem.Folder ->
+                        item.copy(items = removeItemFromCollection(item.items, itemId))
+                    is CollectionItem.Request -> item
+                }
+            }
+
+    /**
+     * Renames an item in a collection's nested structure by ID.
+     * Recursively searches through folders.
+     */
+    private fun renameItemInCollection(
+        items: List<CollectionItem>,
+        itemId: String,
+        newName: String,
+    ): List<CollectionItem> =
+        items.map { item ->
+            when (item) {
+                is CollectionItem.Request ->
+                    if (item.id == itemId) item.copy(name = newName) else item
+                is CollectionItem.Folder ->
+                    if (item.id == itemId) {
+                        item.copy(name = newName)
+                    } else {
+                        item.copy(items = renameItemInCollection(item.items, itemId, newName))
+                    }
+            }
+        }
 }
