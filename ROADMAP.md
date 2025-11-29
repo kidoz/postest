@@ -5,7 +5,7 @@ This document outlines planned features and improvements for Postest.
 ## Current Features
 
 - [x] Full HTTP request building (GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS)
-- [x] Request body types: JSON, XML, Form URL Encoded, Raw
+- [x] Request body types: JSON, XML, Form URL Encoded, Form Data, Binary, Raw
 - [x] Authentication: None, Basic, Bearer Token, API Key
 - [x] Response viewing with syntax highlighting (JSON, XML, HTML)
 - [x] Collection management with folders
@@ -23,8 +23,8 @@ This document outlines planned features and improvements for Postest.
 
 Complete existing backend features that are missing UI:
 
-- [ ] FormData Body UI - Add multipart/form-data editor with file upload
-- [ ] Binary File Upload UI - Add file picker for binary body type
+- [x] FormData Body UI - Add multipart/form-data editor with file upload
+- [x] Binary File Upload UI - Add file picker for binary body type
 - [ ] GraphQL UI - Add query/variables editor for GraphQL requests
 - [ ] Collection-Level Auth UI - UI to set/edit auth at collection level
 
