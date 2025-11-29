@@ -113,7 +113,8 @@ fun MainScreen(
                         environments = state.environments,
                         selectedEnvironmentId = state.activeEnvironmentId,
                         onRequestClick = { request ->
-                            viewModel.openRequest(request.request)
+                            // Use the collection item's name for the request
+                            viewModel.openRequest(request.request.copy(name = request.name))
                         },
                         onHistoryClick = { entry ->
                             viewModel.openHistoryEntry(entry)
