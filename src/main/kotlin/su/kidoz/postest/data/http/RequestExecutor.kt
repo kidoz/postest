@@ -91,8 +91,16 @@ class RequestExecutor(
                     }
                 }
 
-            val endTime = System.currentTimeMillis()
+            // Time to first byte (headers received)
+            val firstByteTime = System.currentTimeMillis()
+            val timeToFirstByte = firstByteTime - startTime
+
+            // Read body and measure download time
             val bodyText = response.bodyAsText()
+            val downloadEndTime = System.currentTimeMillis()
+            val downloadTime = downloadEndTime - firstByteTime
+
+            val totalTime = downloadEndTime - startTime
 
             val httpResponse =
                 HttpResponse(
@@ -102,10 +110,18 @@ class RequestExecutor(
                     body = bodyText,
                     contentType = response.headers[HttpHeaders.ContentType],
                     size = bodyText.toByteArray().size.toLong(),
-                    time = ResponseTime(total = endTime - startTime),
+                    time =
+                        ResponseTime(
+                            total = totalTime,
+                            firstByte = timeToFirstByte,
+                            download = downloadTime,
+                        ),
                 )
 
-            logger.info { "Response received: ${httpResponse.statusCode} ${httpResponse.statusText} in ${httpResponse.time.total}ms" }
+            logger.info {
+                "Response received: ${httpResponse.statusCode} ${httpResponse.statusText} " +
+                    "in ${totalTime}ms (TTFB: ${timeToFirstByte}ms, Download: ${downloadTime}ms)"
+            }
             httpResponse
         }.onFailure { error ->
             logger.error(error) { "Request failed to host: $host - ${error.message}" }
