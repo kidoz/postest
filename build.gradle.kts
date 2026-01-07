@@ -2,10 +2,10 @@ import io.gitlab.arturbosch.detekt.Detekt
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 
 plugins {
-    kotlin("jvm") version "2.2.21"
+    kotlin("jvm") version "2.3.0"
     id("org.jetbrains.compose") version "1.9.3"
-    id("org.jetbrains.kotlin.plugin.compose") version "2.2.21"
-    kotlin("plugin.serialization") version "2.2.21"
+    id("org.jetbrains.kotlin.plugin.compose") version "2.3.0"
+    kotlin("plugin.serialization") version "2.3.0"
     id("app.cash.sqldelight") version "2.2.1"
     id("org.jlleitschuh.gradle.ktlint") version "13.1.0"
     id("io.gitlab.arturbosch.detekt") version "1.23.8"
@@ -136,7 +136,7 @@ tasks.test {
 }
 
 ktlint {
-    version.set("1.5.0")
+    version.set("1.7.0")
     android.set(false)
     filter {
         exclude { element ->
@@ -153,8 +153,11 @@ detekt {
     parallel = true
 }
 
+// Detekt 1.23.x doesn't support JDK 25+ - disable until detekt 2.0 stable release
+val javaVersion = JavaVersion.current().majorVersion.toIntOrNull() ?: 0
 tasks.withType<Detekt>().configureEach {
     jvmTarget = "21"
+    onlyIf { javaVersion < 25 }
 }
 
 sqldelight {
