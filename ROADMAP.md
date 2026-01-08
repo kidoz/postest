@@ -34,7 +34,12 @@ Complete existing backend features that are missing UI:
 
 Essential features for daily use:
 
-- [ ] cURL Import/Export - Import from cURL command, generate cURL for requests
+- [ ] cURL Export - Generate cURL command from current request tab
+  - One-click copy to clipboard for quick terminal execution
+  - Support all body types (JSON, form-data, binary, GraphQL)
+  - Handle authentication (Basic, Bearer, API Key)
+  - Shell escaping for bash/cmd/PowerShell
+- [ ] cURL Import - Parse cURL command to create request
 - [ ] Code Generation - Generate code snippets (Python, JavaScript, Java, Go, etc.)
 - [ ] Request Search - Search across collections by name, URL, method
 - [ ] Keyboard Shortcuts - Ctrl+Enter to send, Ctrl+N new tab, Ctrl+S save, etc.
@@ -49,6 +54,11 @@ Essential features for daily use:
 
 Advanced HTTP and configuration:
 
+- [ ] Git Collection Import - Load collections from Git repositories (GitHub, GitLab, etc.)
+  - Import from public/private repositories via HTTPS or SSH
+  - Support branch/tag selection and path filtering
+  - Auto-detect Postman/OpenAPI formats in repository
+  - Enable version-controlled collection sharing without cloud sync
 - [ ] OAuth 2.0 Auth - Support OAuth 2.0 flows (Authorization Code, Client Credentials, etc.)
 - [ ] Proxy Settings - Configure HTTP/HTTPS proxy
 - [ ] SSL Settings - Toggle SSL verification, custom CA certificates
@@ -85,7 +95,7 @@ Future enhancements:
 - [ ] Mock Server - Create mock responses for testing
 - [ ] Request Chaining - Link requests, pass data between them
 - [ ] Performance Testing - Load testing with iterations
-- [ ] Team Collaboration - Share collections (cloud sync)
+- [ ] Team Collaboration - Share collections (cloud sync, complements Git Import)
 - [ ] Request Versioning - Track changes to requests over time
 - [ ] CLI Mode - Run collections from command line
 - [ ] Plugin System - Extensible plugin architecture
