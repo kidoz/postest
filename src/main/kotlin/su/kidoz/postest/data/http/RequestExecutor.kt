@@ -21,6 +21,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import su.kidoz.postest.domain.model.AuthConfig
+import su.kidoz.postest.domain.model.ClientCertConfig
 import su.kidoz.postest.domain.model.Environment
 import su.kidoz.postest.domain.model.HttpMethod
 import su.kidoz.postest.domain.model.HttpRequest
@@ -64,11 +65,19 @@ class RequestExecutor(
             }
         }
 
+        // Resolve client certificate if needed
+        val certClient =
+            runCatching { resolveClientCertificate(request.clientCertificate, environment) }.getOrElse { e ->
+                logger.error(e) { "Failed to load client certificate: ${e.message}" }
+                return Result.failure(e)
+            }
+
         return runCatching {
             val startTime = System.currentTimeMillis()
+            val effectiveClient = certClient ?: client
 
             val response =
-                client.request(resolvedUrl) {
+                effectiveClient.request(resolvedUrl) {
                     this.method = request.method.toKtorMethod()
 
                     // Apply headers
@@ -123,9 +132,26 @@ class RequestExecutor(
                     "in ${totalTime}ms (TTFB: ${timeToFirstByte}ms, Download: ${downloadTime}ms)"
             }
             httpResponse
+        }.also {
+            certClient?.close()
         }.onFailure { error ->
             logger.error(error) { "Request failed to host: $host - ${error.message}" }
         }
+    }
+
+    private fun resolveClientCertificate(
+        certConfig: ClientCertConfig?,
+        environment: Environment?,
+    ): HttpClient? {
+        if (certConfig == null) return null
+
+        val certPath = variableResolver.resolve(certConfig.certPath, environment)
+        val keyPath = variableResolver.resolve(certConfig.keyPath, environment)
+        val passphrase = variableResolver.resolve(certConfig.passphrase, environment)
+
+        logger.info { "Loading client certificate for mTLS from: $certPath" }
+        val certAndKey = CertificateLoader.load(certPath, keyPath, passphrase)
+        return HttpClientFactory.createWithClientCertificate(certAndKey)
     }
 
     private fun buildUrl(

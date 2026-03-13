@@ -6,11 +6,22 @@ import io.ktor.client.plugins.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.plugins.logging.*
 import io.ktor.http.*
+import io.ktor.network.tls.CertificateAndKey
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.json.Json
 
 object HttpClientFactory {
-    fun create(enableLogging: Boolean = false): HttpClient =
+    fun create(enableLogging: Boolean = false): HttpClient = buildClient(enableLogging = enableLogging)
+
+    fun createWithClientCertificate(
+        certAndKey: CertificateAndKey,
+        enableLogging: Boolean = false,
+    ): HttpClient = buildClient(certAndKey = certAndKey, enableLogging = enableLogging)
+
+    private fun buildClient(
+        certAndKey: CertificateAndKey? = null,
+        enableLogging: Boolean = false,
+    ): HttpClient =
         HttpClient(CIO) {
             install(ContentNegotiation) {
                 json(
@@ -41,6 +52,11 @@ object HttpClientFactory {
 
             engine {
                 requestTimeout = 60_000
+                if (certAndKey != null) {
+                    https {
+                        certificates += certAndKey
+                    }
+                }
             }
 
             expectSuccess = false

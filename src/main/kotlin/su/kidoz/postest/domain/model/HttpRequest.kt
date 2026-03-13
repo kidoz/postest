@@ -13,6 +13,7 @@ data class HttpRequest(
     val queryParams: List<KeyValue> = emptyList(),
     val body: RequestBody? = null,
     val auth: AuthConfig? = null,
+    val clientCertificate: ClientCertConfig? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
 )

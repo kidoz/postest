@@ -79,7 +79,9 @@ fun RequestPanel(
                 3 ->
                     AuthPanel(
                         auth = request.auth,
+                        clientCertificate = request.clientCertificate,
                         onAuthChange = { onRequestChange(request.copy(auth = it)) },
+                        onClientCertChange = { onRequestChange(request.copy(clientCertificate = it)) },
                     )
             }
         }

@@ -1,12 +1,16 @@
 package su.kidoz.postest.ui.components.request
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import su.kidoz.postest.domain.model.AuthConfig
+import su.kidoz.postest.domain.model.ClientCertConfig
 
 enum class AuthType(
     val displayName: String,
@@ -20,7 +24,9 @@ enum class AuthType(
 @Composable
 fun AuthPanel(
     auth: AuthConfig?,
+    clientCertificate: ClientCertConfig?,
     onAuthChange: (AuthConfig?) -> Unit,
+    onClientCertChange: (ClientCertConfig?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var selectedType by remember {
@@ -34,8 +40,91 @@ fun AuthPanel(
         )
     }
 
-    Column(modifier = modifier.fillMaxSize().padding(8.dp)) {
-        // Auth type selector
+    var certEnabled by remember { mutableStateOf(clientCertificate != null) }
+
+    Column(modifier = modifier.fillMaxSize().padding(8.dp).verticalScroll(rememberScrollState())) {
+        // Client Certificate section
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Checkbox(
+                checked = certEnabled,
+                onCheckedChange = { checked ->
+                    certEnabled = checked
+                    if (checked) {
+                        onClientCertChange(clientCertificate ?: ClientCertConfig(""))
+                    } else {
+                        onClientCertChange(null)
+                    }
+                },
+            )
+            Text("Client Certificate (mTLS)", style = MaterialTheme.typography.titleSmall)
+        }
+
+        if (certEnabled) {
+            val certConfig = clientCertificate ?: ClientCertConfig("")
+            val certPath = certConfig.certPath
+            val isPkcs12 =
+                certPath.lowercase().let { it.endsWith(".p12") || it.endsWith(".pfx") }
+
+            Column(
+                modifier = Modifier.padding(start = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = "PEM (.pem, .crt + .key) or PKCS#12 (.p12, .pfx)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                OutlinedTextField(
+                    value = certPath,
+                    onValueChange = { path ->
+                        onClientCertChange(certConfig.copy(certPath = path))
+                    },
+                    label = { Text("Certificate file") },
+                    placeholder = { Text("/path/to/client.pem or client.p12") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+
+                if (!isPkcs12) {
+                    OutlinedTextField(
+                        value = certConfig.keyPath,
+                        onValueChange = { path ->
+                            onClientCertChange(certConfig.copy(keyPath = path))
+                        },
+                        label = { Text("Private key file") },
+                        placeholder = { Text("/path/to/client.key") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                    )
+                }
+
+                OutlinedTextField(
+                    value = certConfig.passphrase,
+                    onValueChange = { pass ->
+                        onClientCertChange(certConfig.copy(passphrase = pass))
+                    },
+                    label = { Text("Passphrase") },
+                    placeholder = { Text("Certificate password") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                )
+            }
+
+            Spacer(Modifier.height(8.dp))
+            HorizontalDivider()
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        // HTTP auth type selector
+        Text("Authorization", style = MaterialTheme.typography.titleSmall)
+        Spacer(Modifier.height(8.dp))
+
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             AuthType.entries.forEach { type ->
                 FilterChip(
