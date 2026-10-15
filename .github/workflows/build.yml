@@ -1,0 +1,33 @@
+name: Build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 25 (project toolchain)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      # The last setup-java call decides JAVA_HOME: Gradle runs on JDK 21 because detekt 1.23.x
+      # does not support JDK 25+. JDK 25 stays visible to Gradle as JAVA_HOME_25_X64 for jvmToolchain(25).
+      - name: Set up JDK 21 (Gradle JVM)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Lint, static analysis and tests
+        run: ./gradlew ktlintCheck detekt test
