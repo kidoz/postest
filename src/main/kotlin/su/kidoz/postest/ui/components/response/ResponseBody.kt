@@ -92,6 +92,11 @@ fun ResponseBody(
         ) {
             BodyViewMode.entries.forEach { mode ->
                 FilterChip(
+                    colors =
+                        FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        ),
                     selected = viewMode == mode,
                     onClick = { viewMode = mode },
                     label = { Text(mode.displayName) },

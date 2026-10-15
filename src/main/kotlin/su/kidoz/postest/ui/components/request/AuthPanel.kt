@@ -1,5 +1,6 @@
 package su.kidoz.postest.ui.components.request
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -124,9 +125,14 @@ fun AuthPanel(
         Text("Authorization", style = MaterialTheme.typography.titleSmall)
         Spacer(Modifier.height(8.dp))
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             AuthType.entries.forEach { type ->
                 FilterChip(
+                    colors =
+                        FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        ),
                     selected = selectedType == type,
                     onClick = {
                         selectedType = type
