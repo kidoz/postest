@@ -4,6 +4,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -276,6 +277,25 @@ class MainViewModelTest {
             testDispatcher.scheduler.advanceUntilIdle()
 
             coVerify { manageHistoryUseCase.addHistoryEntry(any()) }
+        }
+
+    @Test
+    fun `sendRequest should not add to history or set error when request is cancelled`() =
+        runTest {
+            val viewModel = createViewModel()
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            coEvery { executeRequestUseCase.invoke(any()) } throws CancellationException("Request cancelled")
+
+            viewModel.updateRequest(HttpRequest(url = "https://api.example.com"))
+            viewModel.sendRequest()
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            coVerify(exactly = 0) { manageHistoryUseCase.addHistoryEntry(any()) }
+            val activeTab = viewModel.state.value.activeTab
+            assertNotNull(activeTab)
+            assertNull(activeTab.error)
+            assertNull(activeTab.response)
         }
 
     @Test

@@ -7,10 +7,12 @@ import io.ktor.client.request.HttpRequestData
 import io.ktor.client.request.HttpResponseData
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import su.kidoz.postest.domain.model.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import io.ktor.http.HttpMethod as KtorHttpMethod
 
@@ -379,6 +381,27 @@ class RequestExecutorTest {
             val result = executor.execute(request)
 
             assertTrue(result.isFailure)
+        }
+
+    @Test
+    fun `execute request propagates cancellation instead of returning failure`() =
+        runTest {
+            val mockClient =
+                createMockClient {
+                    throw CancellationException("Request cancelled")
+                }
+
+            val executor = RequestExecutor(mockClient)
+            val request =
+                HttpRequest(
+                    method = HttpMethod.GET,
+                    url = "https://api.example.com/users",
+                )
+
+            // A cancelled request must rethrow CancellationException, not produce a Result.failure
+            assertFailsWith<CancellationException> {
+                executor.execute(request)
+            }
         }
 
     @Test

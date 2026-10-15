@@ -3,6 +3,8 @@ package su.kidoz.postest.viewmodel.manager
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import su.kidoz.postest.domain.model.HistoryEntry
 import su.kidoz.postest.domain.model.HttpRequest
@@ -41,13 +43,18 @@ class RequestExecutionManager(
             oldJob?.cancel()
 
             scope.launch {
+                val currentJob = coroutineContext.job
                 val startTime = System.currentTimeMillis()
                 val result = executeRequestUseCase(request)
                 val endTime = System.currentTimeMillis()
                 val duration = endTime - startTime
 
-                // Remove job from tracking when complete
-                activeRequestJobs.remove(tabId)
+                // Skip writing results if this job was cancelled or superseded by a newer request
+                currentJob.ensureActive()
+                if (activeRequestJobs[tabId] != currentJob) return@launch
+
+                // Remove job from tracking when complete, but only if still the current job
+                activeRequestJobs.remove(tabId, currentJob)
 
                 result.fold(
                     onSuccess = { response ->

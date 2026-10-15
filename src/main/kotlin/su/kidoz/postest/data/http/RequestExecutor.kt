@@ -15,6 +15,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.Parameters
 import io.ktor.http.contentType
 import io.ktor.http.encodeURLParameter
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -135,6 +136,8 @@ class RequestExecutor(
         }.also {
             certClient?.close()
         }.onFailure { error ->
+            // Cancellation must propagate instead of surfacing as a request failure
+            if (error is CancellationException) throw error
             logger.error(error) { "Request failed to host: $host - ${error.message}" }
         }
     }
