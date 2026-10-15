@@ -1,5 +1,6 @@
 package su.kidoz.postest.ui.components.sidebar
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -42,18 +43,25 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import su.kidoz.postest.domain.model.CollectionItem
 import su.kidoz.postest.domain.model.HttpMethod
 import su.kidoz.postest.domain.model.RequestCollection
+import su.kidoz.postest.ui.components.common.AppTooltip
 import su.kidoz.postest.ui.components.common.ConfirmDialog
+import su.kidoz.postest.ui.components.common.DesktopIconButton
 import su.kidoz.postest.ui.components.common.TextInputDialog
 import su.kidoz.postest.ui.theme.AppTheme
+import su.kidoz.postest.util.requestDisplayName
 
 @Composable
 fun CollectionTree(
     collections: List<RequestCollection>,
     onRequestClick: (CollectionItem.Request) -> Unit,
+    selectedRequestId: String?,
     onNewCollection: () -> Unit,
     onNewRequest: (RequestCollection) -> Unit,
     onImportCollection: () -> Unit,
@@ -72,26 +80,26 @@ fun CollectionTree(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .padding(8.dp),
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = "Collections",
-                style = MaterialTheme.typography.titleSmall,
-            )
+            TextButton(
+                onClick = onNewCollection,
+                modifier = Modifier.height(32.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp),
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("New collection", style = MaterialTheme.typography.labelMedium)
+            }
 
             Box {
-                IconButton(
+                DesktopIconButton(
+                    icon = Icons.Default.MoreVert,
+                    description = "Collection actions",
                     onClick = { showMenu = true },
-                    modifier = Modifier.size(24.dp),
-                ) {
-                    Icon(
-                        Icons.Default.Add,
-                        contentDescription = "Collection actions",
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
+                )
 
                 DropdownMenu(
                     expanded = showMenu,
@@ -136,6 +144,7 @@ fun CollectionTree(
                     CollectionNode(
                         collection = collection,
                         onRequestClick = onRequestClick,
+                        selectedRequestId = selectedRequestId,
                         onNewRequest = { onNewRequest(collection) },
                         onExportCollection = { onExportCollection(collection) },
                         onRenameCollection = { newName -> onRenameCollection(collection, newName) },
@@ -180,6 +189,7 @@ private fun EmptyCollectionsPlaceholder(onNewCollection: () -> Unit) {
 private fun CollectionNode(
     collection: RequestCollection,
     onRequestClick: (CollectionItem.Request) -> Unit,
+    selectedRequestId: String?,
     onNewRequest: () -> Unit,
     onExportCollection: () -> Unit,
     onRenameCollection: (String) -> Unit,
@@ -218,21 +228,18 @@ private fun CollectionNode(
 
             Text(
                 text = collection.name,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.weight(1f),
             )
 
             Box {
-                IconButton(
+                DesktopIconButton(
+                    icon = Icons.Default.MoreVert,
+                    description = "Collection menu",
                     onClick = { showMenu = true },
-                    modifier = Modifier.size(20.dp),
-                ) {
-                    Icon(
-                        Icons.Default.MoreVert,
-                        contentDescription = "Collection menu",
-                        modifier = Modifier.size(16.dp),
-                    )
-                }
+                )
 
                 CollectionContextMenu(
                     expanded = showMenu,
@@ -263,6 +270,7 @@ private fun CollectionNode(
                     item = item,
                     depth = 1,
                     onRequestClick = onRequestClick,
+                    selectedRequestId = selectedRequestId,
                     onRenameItem = onRenameItem,
                     onDeleteItem = onDeleteItem,
                 )
@@ -348,6 +356,7 @@ private fun CollectionItemNode(
     item: CollectionItem,
     depth: Int,
     onRequestClick: (CollectionItem.Request) -> Unit,
+    selectedRequestId: String?,
     onRenameItem: (CollectionItem, String) -> Unit,
     onDeleteItem: (CollectionItem) -> Unit,
 ) {
@@ -357,6 +366,7 @@ private fun CollectionItemNode(
                 item = item,
                 depth = depth,
                 onRequestClick = onRequestClick,
+                selectedRequestId = selectedRequestId,
                 onRename = { newName -> onRenameItem(item, newName) },
                 onDelete = { onDeleteItem(item) },
             )
@@ -367,6 +377,7 @@ private fun CollectionItemNode(
                 item = item,
                 depth = depth,
                 onRequestClick = onRequestClick,
+                selectedRequestId = selectedRequestId,
                 onRenameItem = onRenameItem,
                 onDeleteItem = onDeleteItem,
             )
@@ -379,6 +390,7 @@ private fun RequestItemNode(
     item: CollectionItem.Request,
     depth: Int,
     onRequestClick: (CollectionItem.Request) -> Unit,
+    selectedRequestId: String?,
     onRename: (String) -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -402,7 +414,14 @@ private fun RequestItemNode(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .clickable { onRequestClick(item) }
+                .background(
+                    if (selectedRequestId == item.request.id) {
+                        MaterialTheme.colorScheme.primaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.surface
+                    },
+                ).semantics { selected = selectedRequestId == item.request.id }
+                .clickable(onClickLabel = "Open request") { onRequestClick(item) }
                 .padding(start = (depth * 16 + 8).dp, top = 4.dp, bottom = 4.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -410,26 +429,29 @@ private fun RequestItemNode(
             text = item.request.method.name,
             style = MaterialTheme.typography.labelSmall,
             color = methodColor,
-            modifier = Modifier.width(48.dp),
+            maxLines = 1,
+            modifier = Modifier.width(64.dp),
         )
 
-        Text(
-            text = item.name,
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.weight(1f),
-        )
+        Spacer(Modifier.width(8.dp))
+
+        val label = requestDisplayName(item.name, item.request.url)
+        AppTooltip(label, Modifier.weight(1f)) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
 
         Box {
-            IconButton(
+            DesktopIconButton(
+                icon = Icons.Default.MoreVert,
+                description = "Request menu",
                 onClick = { showMenu = true },
-                modifier = Modifier.size(16.dp),
-            ) {
-                Icon(
-                    Icons.Default.MoreVert,
-                    contentDescription = "Request menu",
-                    modifier = Modifier.size(14.dp),
-                )
-            }
+            )
 
             ItemContextMenu(
                 expanded = showMenu,
@@ -481,6 +503,7 @@ private fun FolderItemNode(
     item: CollectionItem.Folder,
     depth: Int,
     onRequestClick: (CollectionItem.Request) -> Unit,
+    selectedRequestId: String?,
     onRenameItem: (CollectionItem, String) -> Unit,
     onDeleteItem: (CollectionItem) -> Unit,
 ) {
@@ -514,21 +537,18 @@ private fun FolderItemNode(
 
             Text(
                 text = item.name,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.weight(1f),
             )
 
             Box {
-                IconButton(
+                DesktopIconButton(
+                    icon = Icons.Default.MoreVert,
+                    description = "Folder menu",
                     onClick = { showMenu = true },
-                    modifier = Modifier.size(16.dp),
-                ) {
-                    Icon(
-                        Icons.Default.MoreVert,
-                        contentDescription = "Folder menu",
-                        modifier = Modifier.size(14.dp),
-                    )
-                }
+                )
 
                 ItemContextMenu(
                     expanded = showMenu,
@@ -551,6 +571,7 @@ private fun FolderItemNode(
                     item = subItem,
                     depth = depth + 1,
                     onRequestClick = onRequestClick,
+                    selectedRequestId = selectedRequestId,
                     onRenameItem = onRenameItem,
                     onDeleteItem = onDeleteItem,
                 )

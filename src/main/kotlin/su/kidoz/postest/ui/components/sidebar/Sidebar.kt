@@ -23,6 +23,7 @@ fun Sidebar(
     history: List<HistoryEntry>,
     environments: List<Environment>,
     selectedEnvironmentId: String?,
+    selectedRequestId: String?,
     onRequestClick: (CollectionItem.Request) -> Unit,
     onHistoryClick: (HistoryEntry) -> Unit,
     onNewCollection: () -> Unit,
@@ -65,6 +66,8 @@ fun Sidebar(
                 Tab(
                     selected = selectedTab == tab,
                     onClick = { selectedTab = tab },
+                    selectedContentColor = MaterialTheme.colorScheme.primary,
+                    unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     text = { Text(tab.title, style = MaterialTheme.typography.labelMedium) },
                 )
             }
@@ -76,6 +79,7 @@ fun Sidebar(
                 SidebarTab.COLLECTIONS -> {
                     CollectionTree(
                         collections = collections,
+                        selectedRequestId = selectedRequestId,
                         onRequestClick = onRequestClick,
                         onNewCollection = onNewCollection,
                         onNewRequest = onNewRequest,
