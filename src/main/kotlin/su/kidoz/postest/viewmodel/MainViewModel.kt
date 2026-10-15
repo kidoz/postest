@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.update
 import su.kidoz.postest.domain.model.Environment
 import su.kidoz.postest.domain.model.HistoryEntry
 import su.kidoz.postest.domain.model.HttpRequest
+import su.kidoz.postest.domain.model.RequestBody
 import su.kidoz.postest.domain.model.RequestCollection
 import su.kidoz.postest.domain.usecase.ExecuteRequestUseCase
 import su.kidoz.postest.domain.usecase.ExportCollectionUseCase
@@ -29,6 +30,7 @@ import su.kidoz.postest.viewmodel.manager.RequestExecutionManager
 import su.kidoz.postest.viewmodel.manager.TabManager
 import java.io.File
 import java.util.UUID
+import kotlin.reflect.KClass
 
 private val logger = KotlinLogging.logger {}
 
@@ -40,6 +42,7 @@ data class TabState(
     val isLoading: Boolean = false,
     val isDirty: Boolean = false,
     val error: String? = null,
+    val bodyDrafts: Map<KClass<out RequestBody>, RequestBody> = emptyMap(),
 )
 
 data class AppState(
@@ -53,6 +56,7 @@ data class AppState(
     val showEnvironmentDialog: Boolean = false,
     val showNewCollectionDialog: Boolean = false,
     val isInitialized: Boolean = false,
+    val pendingCloseTabId: String? = null,
 ) {
     val activeTab: TabState?
         get() = tabs.find { it.id == activeTabId } ?: tabs.firstOrNull()
@@ -181,6 +185,14 @@ class MainViewModel(
 
     fun closeTab(tabId: String) {
         tabManager.closeTab(tabId)
+    }
+
+    fun discardPendingTab() {
+        tabManager.discardPendingTab()
+    }
+
+    fun cancelTabClose() {
+        tabManager.cancelTabClose()
     }
 
     fun selectTab(tabId: String) {

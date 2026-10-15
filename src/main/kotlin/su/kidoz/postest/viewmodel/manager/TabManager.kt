@@ -3,6 +3,7 @@ package su.kidoz.postest.viewmodel.manager
 import su.kidoz.postest.domain.model.HistoryEntry
 import su.kidoz.postest.domain.model.HttpRequest
 import su.kidoz.postest.domain.model.HttpResponse
+import su.kidoz.postest.domain.model.RequestBody
 import su.kidoz.postest.viewmodel.AppState
 import su.kidoz.postest.viewmodel.StateUpdater
 import su.kidoz.postest.viewmodel.TabState
@@ -31,24 +32,42 @@ class TabManager(
     }
 
     /**
-     * Closes a tab. If closing the last tab, creates a new empty one.
+     * Asks before discarding edits. Clean tabs close immediately.
      */
     fun closeTab(tabId: String) {
         stateUpdater.update { state ->
-            val newTabs = state.tabs.filter { it.id != tabId }
-            if (newTabs.isEmpty()) {
-                val newTab = TabState()
-                state.copy(tabs = listOf(newTab), activeTabId = newTab.id)
-            } else {
-                val newActiveTabId =
-                    if (state.activeTabId == tabId) {
-                        newTabs.firstOrNull()?.id
-                    } else {
-                        state.activeTabId
-                    }
-                state.copy(tabs = newTabs, activeTabId = newActiveTabId)
+            when (state.tabs.find { it.id == tabId }?.isDirty) {
+                true -> state.copy(pendingCloseTabId = tabId)
+                false -> removeTab(state, tabId)
+                null -> state
             }
         }
+    }
+
+    fun discardPendingTab() {
+        stateUpdater.update { state ->
+            state.pendingCloseTabId?.let { removeTab(state, it) } ?: state
+        }
+    }
+
+    fun cancelTabClose() {
+        stateUpdater.update { it.copy(pendingCloseTabId = null) }
+    }
+
+    private fun removeTab(
+        state: AppState,
+        tabId: String,
+    ): AppState {
+        val index = state.tabs.indexOfFirst { it.id == tabId }
+        if (index < 0) return state.copy(pendingCloseTabId = null)
+        val remaining = state.tabs.filter { it.id != tabId }.ifEmpty { listOf(TabState()) }
+        val activeId =
+            if (state.activeTab?.id == tabId) {
+                remaining[index.coerceAtMost(remaining.lastIndex)].id
+            } else {
+                state.activeTabId
+            }
+        return state.copy(tabs = remaining, activeTabId = activeId, pendingCloseTabId = null)
     }
 
     /**
@@ -72,7 +91,20 @@ class TabManager(
                 tabs =
                     state.tabs.map { tab ->
                         if (tab.id == tabId) {
-                            tab.copy(request = request, isDirty = true)
+                            val previousBody = tab.request.body ?: RequestBody.None
+                            val nextBody = request.body ?: RequestBody.None
+                            val drafts = tab.bodyDrafts + (previousBody::class to previousBody)
+                            val restoredBody =
+                                if (previousBody::class != nextBody::class) {
+                                    drafts[nextBody::class] ?: nextBody
+                                } else {
+                                    nextBody
+                                }
+                            tab.copy(
+                                request = request.copy(body = if (request.body == null) null else restoredBody),
+                                isDirty = tab.isDirty || request != tab.request,
+                                bodyDrafts = drafts + (restoredBody::class to restoredBody),
+                            )
                         } else {
                             tab
                         }
