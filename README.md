@@ -10,14 +10,14 @@ A modern, lightweight REST API client built with Kotlin and Compose Multiplatfor
 
 - **HTTP Methods** - Support for GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS
 - **Request Builder** - Headers, query parameters, and body editor
-- **Body Types** - JSON, form data, multipart, raw text, binary
-- **Authentication** - Basic Auth, Bearer Token, API Key
+- **Body Types** - JSON, GraphQL, form data, multipart, raw text, binary
+- **Authentication** - Basic Auth, Bearer Token, API Key, Client Certificate (mTLS)
 - **Collections** - Organize requests into collections and folders
 - **Environments** - Manage variables across different environments
 - **Variable Substitution** - Use `{{variable}}` syntax in URLs, headers, and body
 - **History** - Track and replay previous requests
 - **Response Viewer** - Formatted JSON, headers, cookies, and timing info
-- **Dark Theme** - Modern dark UI design
+- **Dark & Light Themes** - Modern UI with toggleable dark and light themes
 
 ## Screenshots
 

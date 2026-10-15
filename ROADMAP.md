@@ -9,7 +9,7 @@ This document outlines planned features and improvements for Postest.
 - [x] Authentication: None, Basic, Bearer Token, API Key
 - [x] Response viewing with syntax highlighting (JSON, XML, HTML)
 - [x] Collection management with folders
-- [x] Environment variables with secret support
+- [x] Environment variables with secret masking in the UI (values stored unencrypted)
 - [x] Request history tracking
 - [x] Import: Postman Collection (v1, v2, v2.1), OpenAPI 3.x
 - [x] Export: Postman Collection v2.1
@@ -42,7 +42,7 @@ Essential features for daily use:
 - [ ] cURL Import - Parse cURL command to create request
 - [ ] Code Generation - Generate code snippets (Python, JavaScript, Java, Go, etc.)
 - [ ] Request Search - Search across collections by name, URL, method
-- [ ] Keyboard Shortcuts - Ctrl+Enter to send, Ctrl+N new tab, Ctrl+S save, etc.
+- [x] Keyboard Shortcuts - Ctrl+Enter to send, Ctrl+N new tab, Ctrl+S save, etc.
 - [ ] Request/Response Size - Show request body size and response size
 - [ ] Duplicate Request - Duplicate existing request in collection
 - [ ] Move Request - Move request between collections/folders
