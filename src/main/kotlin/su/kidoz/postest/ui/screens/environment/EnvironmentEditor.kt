@@ -1,9 +1,12 @@
 package su.kidoz.postest.ui.screens.environment
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -32,12 +35,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import su.kidoz.postest.domain.model.Environment
 import su.kidoz.postest.domain.model.Variable
 import su.kidoz.postest.domain.model.VariableType
+import su.kidoz.postest.ui.components.common.AppTooltip
+import su.kidoz.postest.ui.components.common.CompactTextField
+import su.kidoz.postest.ui.components.common.DesktopIconButton
+import su.kidoz.postest.ui.theme.MonospaceFont
 
 /**
  * Editor for creating/editing an environment.
@@ -48,13 +57,14 @@ fun EnvironmentEditor(
     onSave: (Environment) -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
+    isCreating: Boolean = false,
 ) {
     var name by remember(environment.id) { mutableStateOf(environment.name) }
     var variables by remember(environment.id) { mutableStateOf(environment.variables) }
 
     Column(modifier = modifier) {
         Text(
-            text = if (environment.id.isBlank()) "New Environment" else "Edit Environment",
+            text = if (isCreating) "Create Environment" else "Edit Environment",
             style = MaterialTheme.typography.titleLarge,
         )
 
@@ -104,7 +114,7 @@ fun EnvironmentEditor(
                 },
                 enabled = name.isNotBlank(),
             ) {
-                Text("Save")
+                Text(if (isCreating) "Create" else "Save")
             }
         }
     }
@@ -116,42 +126,46 @@ private fun VariableEditor(
     onVariablesChange: (List<Variable>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier.fillMaxWidth().padding(8.dp)) {
-        LazyColumn(
-            modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            itemsIndexed(variables, key = { _, variable -> variable.id }) { index, variable ->
-                VariableRow(
-                    variable = variable,
-                    onVariableChange = { newVariable ->
-                        onVariablesChange(
-                            variables.toMutableList().apply {
-                                this[index] = newVariable
-                            },
-                        )
-                    },
-                    onDelete = {
-                        onVariablesChange(
-                            variables.toMutableList().apply {
-                                removeAt(index)
-                            },
-                        )
-                    },
+    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+        val wide = maxWidth >= 480.dp
+        Column(Modifier.fillMaxSize()) {
+            if (wide) {
+                Row(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                    Spacer(Modifier.width(32.dp))
+                    Text("Name", Modifier.weight(0.4f).padding(start = 12.dp), style = MaterialTheme.typography.labelMedium)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Value", Modifier.weight(0.6f).padding(start = 12.dp), style = MaterialTheme.typography.labelMedium)
+                    Spacer(Modifier.width(72.dp))
+                }
+            }
+            LazyColumn(
+                modifier = Modifier.weight(1f, fill = false),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                itemsIndexed(variables, key = { _, variable -> variable.id }) { index, variable ->
+                    VariableRow(
+                        variable = variable,
+                        wide = wide,
+                        onVariableChange = { updated ->
+                            onVariablesChange(variables.toMutableList().apply { this[index] = updated })
+                        },
+                        onDelete = { onVariablesChange(variables.filterIndexed { i, _ -> i != index }) },
+                    )
+                }
+            }
+            if (variables.isEmpty()) {
+                Text(
+                    "Add variables such as baseUrl, then use {{baseUrl}} in a request.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(vertical = 8.dp),
                 )
             }
-        }
-
-        Spacer(Modifier.height(8.dp))
-
-        TextButton(
-            onClick = {
-                onVariablesChange(variables + Variable(key = "", value = ""))
-            },
-        ) {
-            Icon(Icons.Default.Add, contentDescription = null)
-            Spacer(Modifier.width(4.dp))
-            Text("Add Variable")
+            TextButton(onClick = { onVariablesChange(variables + Variable(key = "", value = "")) }) {
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Add variable")
+            }
         }
     }
 }
@@ -159,125 +173,63 @@ private fun VariableEditor(
 @Composable
 private fun VariableRow(
     variable: Variable,
+    wide: Boolean,
     onVariableChange: (Variable) -> Unit,
     onDelete: () -> Unit,
 ) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-        shape = MaterialTheme.shapes.medium,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
-        ) {
-            // Header row: Checkbox, Secret toggle, Delete button
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(
-                        checked = variable.enabled,
-                        onCheckedChange = { checked ->
-                            onVariableChange(variable.copy(enabled = checked))
-                        },
-                        modifier = Modifier.size(24.dp),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = if (variable.enabled) "Enabled" else "Disabled",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-
-                Row {
-                    // Secret toggle
-                    IconButton(
-                        onClick = {
-                            val newType =
-                                if (variable.type == VariableType.SECRET) {
-                                    VariableType.DEFAULT
-                                } else {
-                                    VariableType.SECRET
-                                }
-                            onVariableChange(variable.copy(type = newType))
-                        },
-                        modifier = Modifier.size(32.dp),
-                    ) {
-                        Icon(
-                            imageVector =
-                                if (variable.type == VariableType.SECRET) {
-                                    Icons.Default.Lock
-                                } else {
-                                    Icons.Default.LockOpen
-                                },
-                            contentDescription =
-                                if (variable.type == VariableType.SECRET) {
-                                    "Secret variable"
-                                } else {
-                                    "Regular variable"
-                                },
-                            tint =
-                                if (variable.type == VariableType.SECRET) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                },
-                            modifier = Modifier.size(18.dp),
-                        )
-                    }
-
-                    IconButton(
-                        onClick = onDelete,
-                        modifier = Modifier.size(32.dp),
-                    ) {
-                        Icon(
-                            Icons.Default.Delete,
-                            contentDescription = "Remove",
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    }
-                }
+    val fields: @Composable RowScope.() -> Unit = {
+        CompactTextField(
+            value = variable.key,
+            onValueChange = { onVariableChange(variable.copy(key = it)) },
+            label = "Variable name",
+            modifier = Modifier.weight(0.4f),
+            textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = MonospaceFont),
+        )
+        Spacer(Modifier.width(8.dp))
+        CompactTextField(
+            value = variable.value,
+            onValueChange = { onVariableChange(variable.copy(value = it)) },
+            label = "Variable value",
+            modifier = Modifier.weight(0.6f),
+            textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = MonospaceFont),
+            visualTransformation = if (variable.isSecret) PasswordVisualTransformation() else VisualTransformation.None,
+        )
+    }
+    val enabled: @Composable () -> Unit = {
+        AppTooltip("Enable variable") {
+            Checkbox(
+                checked = variable.enabled,
+                onCheckedChange = { onVariableChange(variable.copy(enabled = it)) },
+                modifier = Modifier.size(32.dp).semantics { contentDescription = "Enable variable" },
+            )
+        }
+    }
+    val actions: @Composable () -> Unit = {
+        DesktopIconButton(
+            icon = if (variable.isSecret) Icons.Default.Lock else Icons.Default.LockOpen,
+            description = if (variable.isSecret) "Mark as regular variable" else "Mark as secret variable",
+            onClick = {
+                onVariableChange(variable.copy(type = if (variable.isSecret) VariableType.DEFAULT else VariableType.SECRET))
+            },
+            tint = if (variable.isSecret) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        DesktopIconButton(Icons.Default.Delete, "Remove variable", onDelete, tint = MaterialTheme.colorScheme.error)
+    }
+    if (wide) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            enabled()
+            fields()
+            Spacer(Modifier.width(8.dp))
+            actions()
+        }
+    } else {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                enabled()
+                Text(if (variable.enabled) "Enabled" else "Disabled", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
+                actions()
             }
-
-            Spacer(Modifier.height(8.dp))
-
-            // Name field - full width
-            OutlinedTextField(
-                value = variable.key,
-                onValueChange = { newKey ->
-                    onVariableChange(variable.copy(key = newKey))
-                },
-                label = { Text("Name") },
-                placeholder = { Text("Variable name") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                textStyle = MaterialTheme.typography.bodyMedium,
-            )
-
-            Spacer(Modifier.height(8.dp))
-
-            // Value field - full width
-            OutlinedTextField(
-                value = variable.value,
-                onValueChange = { newValue ->
-                    onVariableChange(variable.copy(value = newValue))
-                },
-                label = { Text("Value") },
-                placeholder = { Text("Variable value") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                textStyle = MaterialTheme.typography.bodyMedium,
-                visualTransformation =
-                    if (variable.type == VariableType.SECRET) {
-                        PasswordVisualTransformation()
-                    } else {
-                        VisualTransformation.None
-                    },
-            )
+            Row(Modifier.fillMaxWidth(), content = fields)
         }
     }
 }

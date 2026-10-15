@@ -11,6 +11,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.unit.dp
 import su.kidoz.postest.domain.model.RequestCollection
+import su.kidoz.postest.ui.components.common.ConfirmDialog
+import su.kidoz.postest.ui.components.common.DesktopIconButton
 import su.kidoz.postest.ui.components.common.HorizontalSplitPane
 import su.kidoz.postest.ui.components.common.RequestTabBar
 import su.kidoz.postest.ui.components.common.TabItem
@@ -18,6 +20,7 @@ import su.kidoz.postest.ui.components.common.VerticalSplitPane
 import su.kidoz.postest.ui.components.request.RequestPanel
 import su.kidoz.postest.ui.components.response.ResponsePanel
 import su.kidoz.postest.ui.components.sidebar.Sidebar
+import su.kidoz.postest.util.requestDisplayName
 import su.kidoz.postest.viewmodel.AppState
 import su.kidoz.postest.viewmodel.MainViewModel
 import java.io.File
@@ -112,6 +115,7 @@ fun MainScreen(
                         history = state.history,
                         environments = state.environments,
                         selectedEnvironmentId = state.activeEnvironmentId,
+                        selectedRequestId = state.activeTab?.request?.id,
                         onRequestClick = { request ->
                             // Use the collection item's name for the request
                             viewModel.openRequest(request.request.copy(name = request.name))
@@ -153,6 +157,17 @@ fun MainScreen(
             // Status bar
             StatusBar(state = state)
         }
+    }
+
+    state.tabs.find { it.id == state.pendingCloseTabId }?.let { tab ->
+        ConfirmDialog(
+            title = "Discard request changes?",
+            message = "Changes to “${requestDisplayName(tab.request.name, tab.request.url)}” will be lost.",
+            confirmText = "Discard",
+            isDestructive = true,
+            onConfirm = viewModel::discardPendingTab,
+            onDismiss = viewModel::cancelTabClose,
+        )
     }
 
     // New Collection Dialog
@@ -250,9 +265,11 @@ fun MainScreen(
     if (state.showEnvironmentDialog) {
         EnvironmentManagerDialog(
             environments = state.environments,
+            activeEnvironmentId = state.activeEnvironmentId,
             onDismiss = { viewModel.hideEnvironmentDialog() },
             onSave = { viewModel.saveEnvironment(it) },
             onDelete = { viewModel.deleteEnvironment(it) },
+            onSetActive = { viewModel.selectEnvironment(it) },
         )
     }
 }
@@ -264,7 +281,7 @@ private fun TopAppBar(
     viewModel: MainViewModel,
 ) {
     Surface(
-        tonalElevation = 2.dp,
+        color = MaterialTheme.colorScheme.surfaceVariant,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(
@@ -288,7 +305,7 @@ private fun TopAppBar(
                         state.tabs.map { tab ->
                             TabItem(
                                 id = tab.id,
-                                title = tab.request.name.ifBlank { tab.request.url.ifBlank { "Untitled" } },
+                                title = requestDisplayName(tab.request.name, tab.request.url),
                                 method = tab.request.method,
                                 isDirty = tab.isDirty,
                             )
@@ -300,17 +317,14 @@ private fun TopAppBar(
             }
 
             // New tab button
-            IconButton(onClick = { viewModel.newTab() }) {
-                Icon(Icons.Default.Add, contentDescription = "New tab")
-            }
+            DesktopIconButton(Icons.Default.Add, "New tab (⌘/Ctrl+T)", { viewModel.newTab() })
 
             // Theme toggle
-            IconButton(onClick = { viewModel.toggleTheme() }) {
-                Icon(
-                    if (state.isDarkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
-                    contentDescription = "Toggle theme",
-                )
-            }
+            DesktopIconButton(
+                icon = if (state.isDarkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
+                description = if (state.isDarkTheme) "Switch to light theme" else "Switch to dark theme",
+                onClick = { viewModel.toggleTheme() },
+            )
         }
     }
 }
