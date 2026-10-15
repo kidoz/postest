@@ -1,6 +1,9 @@
 package su.kidoz.postest.data.export
 
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import su.kidoz.postest.data.import.PostmanAuth
@@ -29,6 +32,7 @@ import su.kidoz.postest.domain.model.RequestBody
 import su.kidoz.postest.domain.model.RequestCollection
 import su.kidoz.postest.domain.model.Variable
 import java.io.File
+import java.io.IOException
 import java.util.UUID
 
 private val logger = KotlinLogging.logger {}
@@ -72,16 +76,19 @@ class PostmanExporter {
      * @param file The target file
      * @return Result indicating success or failure
      */
-    fun exportToFile(
+    suspend fun exportToFile(
         collection: RequestCollection,
         file: File,
     ): Result<Unit> =
         try {
             val jsonString = export(collection)
-            file.writeText(jsonString, Charsets.UTF_8)
+            withContext(Dispatchers.IO) { file.writeText(jsonString, Charsets.UTF_8) }
             logger.info { "Exported collection to file: ${file.absolutePath}" }
             Result.success(Unit)
-        } catch (e: Exception) {
+        } catch (e: IOException) {
+            logger.error(e) { "Failed to export collection to file: ${e.message}" }
+            Result.failure(ExportException("Failed to export collection: ${e.message}", e))
+        } catch (e: SerializationException) {
             logger.error(e) { "Failed to export collection to file: ${e.message}" }
             Result.failure(ExportException("Failed to export collection: ${e.message}", e))
         }

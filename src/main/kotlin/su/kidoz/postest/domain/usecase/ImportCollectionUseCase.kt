@@ -1,12 +1,15 @@
 package su.kidoz.postest.domain.usecase
 
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import su.kidoz.postest.data.import.ImportException
 import su.kidoz.postest.data.import.OpenAPIImporter
 import su.kidoz.postest.data.import.PostmanImporter
 import su.kidoz.postest.data.repository.CollectionRepository
 import su.kidoz.postest.domain.model.RequestCollection
 import java.io.File
+import java.io.IOException
 
 private val logger = KotlinLogging.logger {}
 
@@ -57,8 +60,8 @@ class ImportCollectionUseCase(
 
         val content =
             try {
-                file.readText(Charsets.UTF_8)
-            } catch (e: Exception) {
+                withContext(Dispatchers.IO) { file.readText(Charsets.UTF_8) }
+            } catch (e: IOException) {
                 logger.error(e) { "Failed to read file: ${file.absolutePath}" }
                 return Result.failure(ImportException("Failed to read file: ${e.message}", e))
             }

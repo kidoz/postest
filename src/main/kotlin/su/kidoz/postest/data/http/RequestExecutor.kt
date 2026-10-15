@@ -16,6 +16,8 @@ import io.ktor.http.Parameters
 import io.ktor.http.contentType
 import io.ktor.http.encodeURLParameter
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -77,6 +79,9 @@ class RequestExecutor(
             val startTime = System.currentTimeMillis()
             val effectiveClient = certClient ?: client
 
+            // Read binary body off the calling thread before building the request
+            val binaryBody = (request.body as? RequestBody.Binary)?.let { loadBinaryBody(it, environment) }
+
             val response =
                 effectiveClient.request(resolvedUrl) {
                     this.method = request.method.toKtorMethod()
@@ -97,7 +102,7 @@ class RequestExecutor(
 
                     // Apply body
                     request.body?.let { requestBody ->
-                        setRequestBody(requestBody, environment, this)
+                        setRequestBody(requestBody, environment, this, binaryBody)
                     }
                 }
 
@@ -142,7 +147,7 @@ class RequestExecutor(
         }
     }
 
-    private fun resolveClientCertificate(
+    private suspend fun resolveClientCertificate(
         certConfig: ClientCertConfig?,
         environment: Environment?,
     ): HttpClient? {
@@ -153,7 +158,7 @@ class RequestExecutor(
         val passphrase = variableResolver.resolve(certConfig.passphrase, environment)
 
         logger.info { "Loading client certificate for mTLS from: $certPath" }
-        val certAndKey = CertificateLoader.load(certPath, keyPath, passphrase)
+        val certAndKey = withContext(Dispatchers.IO) { CertificateLoader.load(certPath, keyPath, passphrase) }
         return HttpClientFactory.createWithClientCertificate(certAndKey)
     }
 
@@ -222,6 +227,7 @@ class RequestExecutor(
         body: RequestBody,
         environment: Environment?,
         builder: HttpRequestBuilder,
+        binaryBody: ByteArray? = null,
     ) {
         when (body) {
             is RequestBody.None -> {}
@@ -269,35 +275,8 @@ class RequestExecutor(
             }
 
             is RequestBody.Binary -> {
-                val filePath = variableResolver.resolve(body.filePath, environment)
-
-                // Security check: reject paths with null bytes (path injection attack)
-                if (filePath.contains('\u0000')) {
-                    throw SecurityException("Binary file path contains null byte (potential path injection)")
-                }
-
-                val file = java.io.File(filePath)
-                val canonical = runCatching { file.canonicalPath }.getOrNull()
-                val home = Paths.get(System.getProperty("user.home")).toFile().canonicalPath
-
-                when {
-                    canonical == null -> {
-                        throw IllegalArgumentException("Cannot resolve file path: $filePath")
-                    }
-                    !file.exists() -> {
-                        throw java.io.FileNotFoundException("Binary file does not exist: $filePath")
-                    }
-                    !file.isFile -> {
-                        throw IllegalArgumentException("Path is not a regular file: $filePath")
-                    }
-                    !canonical.startsWith(home) -> {
-                        throw SecurityException("Binary file must be within user home directory")
-                    }
-                    else -> {
-                        builder.contentType(ContentType.Application.OctetStream)
-                        builder.setBody(file.readBytes())
-                    }
-                }
+                builder.contentType(ContentType.Application.OctetStream)
+                builder.setBody(binaryBody ?: throw IllegalStateException("Binary body was not loaded"))
             }
 
             is RequestBody.FormData -> {
@@ -335,6 +314,39 @@ class RequestExecutor(
                 builder.setBody(json.encodeToString(graphqlBody))
             }
         }
+    }
+
+    private suspend fun loadBinaryBody(
+        body: RequestBody.Binary,
+        environment: Environment?,
+    ): ByteArray {
+        val filePath = variableResolver.resolve(body.filePath, environment)
+
+        // Security check: reject paths with null bytes (path injection attack)
+        if (filePath.contains('\u0000')) {
+            throw SecurityException("Binary file path contains null byte (potential path injection)")
+        }
+
+        val file = java.io.File(filePath)
+        val canonical = runCatching { file.canonicalPath }.getOrNull()
+        val home = Paths.get(System.getProperty("user.home")).toFile().canonicalPath
+
+        when {
+            canonical == null -> {
+                throw IllegalArgumentException("Cannot resolve file path: $filePath")
+            }
+            !file.exists() -> {
+                throw java.io.FileNotFoundException("Binary file does not exist: $filePath")
+            }
+            !file.isFile -> {
+                throw IllegalArgumentException("Path is not a regular file: $filePath")
+            }
+            !canonical.startsWith(home) -> {
+                throw SecurityException("Binary file must be within user home directory")
+            }
+        }
+
+        return withContext(Dispatchers.IO) { file.readBytes() }
     }
 
     /**
