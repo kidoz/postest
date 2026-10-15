@@ -95,7 +95,6 @@ fun KeyValueEditor(
         ) {
             itemsIndexed(
                 filteredItemsWithIndex,
-                key = { _, (originalIndex, _) -> originalIndex },
             ) { _, (originalIndex, item) ->
                 KeyValueRow(
                     item = item,

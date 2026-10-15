@@ -37,7 +37,7 @@ fun EnvironmentList(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        items(environments) { environment ->
+        items(environments, key = { it.id }) { environment ->
             EnvironmentListItem(
                 environment = environment,
                 isSelected = selectedId == environment.id,

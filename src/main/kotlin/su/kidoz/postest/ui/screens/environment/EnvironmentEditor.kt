@@ -49,8 +49,8 @@ fun EnvironmentEditor(
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var name by remember { mutableStateOf(environment.name) }
-    var variables by remember { mutableStateOf(environment.variables) }
+    var name by remember(environment.id) { mutableStateOf(environment.name) }
+    var variables by remember(environment.id) { mutableStateOf(environment.variables) }
 
     Column(modifier = modifier) {
         Text(

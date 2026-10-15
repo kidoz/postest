@@ -29,18 +29,17 @@ fun AuthPanel(
     onClientCertChange: (ClientCertConfig?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var selectedType by remember {
-        mutableStateOf(
-            when (auth) {
-                is AuthConfig.Basic -> AuthType.BASIC
-                is AuthConfig.Bearer -> AuthType.BEARER
-                is AuthConfig.ApiKey -> AuthType.API_KEY
-                else -> AuthType.NONE
-            },
-        )
-    }
+    val authType =
+        when (auth) {
+            is AuthConfig.Basic -> AuthType.BASIC
+            is AuthConfig.Bearer -> AuthType.BEARER
+            is AuthConfig.ApiKey -> AuthType.API_KEY
+            else -> AuthType.NONE
+        }
 
-    var certEnabled by remember { mutableStateOf(clientCertificate != null) }
+    var selectedType by remember(authType) { mutableStateOf(authType) }
+
+    var certEnabled by remember(clientCertificate != null) { mutableStateOf(clientCertificate != null) }
 
     Column(modifier = modifier.fillMaxSize().padding(8.dp).verticalScroll(rememberScrollState())) {
         // Client Certificate section

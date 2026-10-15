@@ -99,7 +99,7 @@ fun HistoryList(
                         )
                     }
 
-                    items(entries) { entry ->
+                    items(entries, key = { it.id }) { entry ->
                         HistoryItem(
                             entry = entry,
                             onClick = { onHistoryClick(entry) },

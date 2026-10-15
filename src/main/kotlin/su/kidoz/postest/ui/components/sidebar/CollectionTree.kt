@@ -132,7 +132,7 @@ fun CollectionTree(
                 contentPadding = PaddingValues(8.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                items(collections) { collection ->
+                items(collections, key = { it.id }) { collection ->
                     CollectionNode(
                         collection = collection,
                         onRequestClick = onRequestClick,
