@@ -29,7 +29,7 @@ class ExportCollectionUseCase(
     ): Result<Unit> {
         logger.info { "Exporting collection '${collection.name}' to Postman format: ${file.absolutePath}" }
 
-        if (!file.parentFile?.exists()!!) {
+        if (file.parentFile?.exists() == false) {
             file.parentFile?.mkdirs()
         }
 
