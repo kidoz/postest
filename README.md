@@ -63,7 +63,8 @@ sudo dpkg -i build/compose/binaries/main/deb/postest_1.0.0_amd64.deb
 
 ### Prerequisites
 
-- JDK 21 or higher
+- JDK 25 toolchain for compilation and tests (auto-provisioned by Gradle if missing)
+- JDK 21+ to run Gradle; run Gradle on JDK 21 to also get detekt (detekt 1.23.x does not support JDK 25+)
 - Gradle (wrapper included)
 
 ### Build
