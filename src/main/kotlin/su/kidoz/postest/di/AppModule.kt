@@ -20,8 +20,6 @@ import su.kidoz.postest.domain.usecase.ImportCollectionUseCase
 import su.kidoz.postest.domain.usecase.ManageCollectionsUseCase
 import su.kidoz.postest.domain.usecase.ManageEnvironmentsUseCase
 import su.kidoz.postest.domain.usecase.ManageHistoryUseCase
-import su.kidoz.postest.security.SecretStore
-import su.kidoz.postest.security.SecretStoreFactory
 import su.kidoz.postest.util.VariableResolver
 import su.kidoz.postest.viewmodel.MainViewModel
 import java.io.File
@@ -98,10 +96,6 @@ val networkModule =
 
         single<RequestExecutor> {
             RequestExecutor(get(), get())
-        }
-
-        single<SecretStore> {
-            SecretStoreFactory.create()
         }
     }
 
