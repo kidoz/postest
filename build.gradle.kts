@@ -136,7 +136,7 @@ compose.desktop {
             }
 
             windows {
-                iconFile.set(project.file("src/main/resources/icon.png"))
+                iconFile.set(project.file("src/main/resources/icon.ico"))
             }
 
             linux {

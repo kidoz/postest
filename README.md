@@ -1,4 +1,10 @@
-# Postest
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/logo-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="docs/images/logo-light.png">
+    <img src="docs/images/logo-light.png" alt="Postest" width="360" height="120">
+  </picture>
+</p>
 
 A modern, lightweight REST API client built with Kotlin and Compose Multiplatform.
 

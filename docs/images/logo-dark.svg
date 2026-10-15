@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="200" viewBox="0 0 600 200">
+  <title>Postest</title>
+<g transform="translate(0 0) scale(.390625)" fill="none"><defs xmlns="http://www.w3.org/2000/svg">
+    <linearGradient id="tile" x1="80" y1="40" x2="432" y2="472" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#222944" />
+      <stop offset="1" stop-color="#101322" />
+    </linearGradient>
+    <linearGradient id="request" x1="314" y1="162" x2="410" y2="242" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#B9BDFF" />
+      <stop offset="1" stop-color="#8092FF" />
+    </linearGradient>
+    <linearGradient id="response" x1="314" y1="264" x2="410" y2="344" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#3CD9B4" />
+      <stop offset="1" stop-color="#94F4D9" />
+    </linearGradient>
+  </defs>
+  
+<rect xmlns="http://www.w3.org/2000/svg" x="40" y="40" width="432" height="432" rx="104" fill="url(#tile)" />
+  
+<rect xmlns="http://www.w3.org/2000/svg" x="41" y="41" width="430" height="430" rx="103" stroke="#BBC6FF" stroke-opacity=".18" stroke-width="2" />
+  
+<path xmlns="http://www.w3.org/2000/svg" d="M112 380V132H204C260 132 294 164 294 212C294 260 260 292 204 292H172V380H112ZM172 188V236H200C224 236 236 228 236 212C236 196 224 188 200 188H172Z" fill="#F4F5FF" fill-rule="evenodd" />
+  
+<path xmlns="http://www.w3.org/2000/svg" d="M314 184H362V162L410 202L362 242V220H314V184Z" fill="url(#request)" />
+  
+<path xmlns="http://www.w3.org/2000/svg" d="M410 286H362V264L314 304L362 344V322H410V286Z" fill="url(#response)" />
+</g>
+<text x="228" y="133" fill="#E6E8EF" font-family="Avenir Next, Avenir, Arial, sans-serif" font-size="100" font-weight="600" letter-spacing="-4">postest</text>
+</svg>

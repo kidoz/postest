@@ -1,151 +1,127 @@
-"""
-Regenerate the application icon (transparent PNG with rounded border) without external tools.
+"""Export Postest branding from the canonical SVG, without network access.
+
 Usage: python3 scripts/regenerate_icon.py
-Writes: src/main/resources/icon.png (512x512)
+Requires: rsvg-convert (librsvg) on PATH.
+Outputs: desktop PNG/ICO/ICNS, GitHub light/dark logos and social preview.
 """
 
+import shutil
 import struct
-import zlib
+import subprocess
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
-W = H = 512
-
-# Color constants
-BG_START = (30, 41, 59)   # #1e293b
-BG_END = (15, 23, 42)     # #0f172a
-STROKE = (51, 65, 85)     # #334155
-P_MAIN_A = (34, 211, 238) # #22d3ee
-P_MAIN_B = (6, 182, 212)  # #06b6d4
-ARROW_A = (249, 115, 22)  # #f97316
-ARROW_B = (251, 146, 60)  # #fb923c
-RESP_COLOR = (167, 139, 250)  # #a78bfa
+ROOT = Path(__file__).resolve().parents[1]
+RESOURCES = ROOT / "src/main/resources"
+IMAGES = ROOT / "docs/images"
+SVG_NS = "http://www.w3.org/2000/svg"
 
 
-def set_px(buf: bytearray, x: int, y: int, rgba: tuple[int, int, int, int]) -> None:
-    if 0 <= x < W and 0 <= y < H:
-        idx = (y * W + x) * 4
-        buf[idx:idx+4] = bytes(rgba)
+def render(svg: Path, width: int, height: int) -> bytes:
+    return subprocess.run(
+        ["rsvg-convert", "--width", str(width), "--height", str(height), str(svg)],
+        check=True,
+        capture_output=True,
+    ).stdout
 
 
-def in_round_rect(x: int, y: int, w: int, h: int, r: int) -> bool:
-    if x < 0 or y < 0 or x >= w or y >= h:
-        return False
-    dx = dy = 0
-    if x < r:
-        dx = r - x
-    elif x >= w - r:
-        dx = x - (w - r - 1)
-    if y < r:
-        dy = r - y
-    elif y >= h - r:
-        dy = y - (h - r - 1)
-    return dx * dx + dy * dy <= r * r
+def write_ico(images: dict[int, bytes]) -> None:
+    sizes = (16, 24, 32, 48, 64, 128, 256)
+    offset = 6 + 16 * len(sizes)
+    directory = bytearray(struct.pack("<HHH", 0, 1, len(sizes)))
+    payload = bytearray()
+    for size in sizes:
+        png = images[size]
+        directory.extend(struct.pack(
+            "<BBBBHHII", size % 256, size % 256, 0, 0, 1, 32, len(png), offset
+        ))
+        payload.extend(png)
+        offset += len(png)
+    (RESOURCES / "icon.ico").write_bytes(directory + payload)
 
 
-def fill_round_rect_grad(buf: bytearray, x0: int, y0: int, w: int, h: int, radius: int, start: tuple[int, int, int], end: tuple[int, int, int]) -> None:
-    for y in range(h):
-        for x in range(w):
-            if not in_round_rect(x, y, w, h, radius):
-                continue
-            t = (x + y) / (w + h)
-            r = int(start[0] * (1 - t) + end[0] * t)
-            g = int(start[1] * (1 - t) + end[1] * t)
-            b = int(start[2] * (1 - t) + end[2] * t)
-            set_px(buf, x0 + x, y0 + y, (r, g, b, 255))
-
-
-def stroke_round_rect(buf: bytearray, x0: int, y0: int, w: int, h: int, radius: int, stroke_w: int, color: tuple[int, int, int]) -> None:
-    r_c, g_c, b_c = color
-    inner_r = max(0, radius - stroke_w)
-    for y in range(h):
-        for x in range(w):
-            if not in_round_rect(x, y, w, h, radius):
-                continue
-            if stroke_w > 0 and in_round_rect(x, y, w, h, inner_r):
-                continue
-            set_px(buf, x0 + x, y0 + y, (r_c, g_c, b_c, 255))
-
-
-def grad(a: tuple[int, int, int], b: tuple[int, int, int], t: float) -> tuple[int, int, int]:
-    return (
-        int(a[0] * (1 - t) + b[0] * t),
-        int(a[1] * (1 - t) + b[1] * t),
-        int(a[2] * (1 - t) + b[2] * t),
+def write_icns(images: dict[int, bytes]) -> None:
+    # Standard sizes plus Retina representations, stored as lossless RGBA PNG.
+    types = {
+        b"icp4": 16, b"icp5": 32, b"icp6": 64, b"ic07": 128,
+        b"ic08": 256, b"ic09": 512, b"ic10": 1024,
+        b"ic11": 32, b"ic12": 64, b"ic13": 256, b"ic14": 512,
+    }
+    payload = b"".join(
+        kind + struct.pack(">I", len(images[size]) + 8) + images[size]
+        for kind, size in types.items()
+    )
+    (RESOURCES / "icon.icns").write_bytes(
+        b"icns" + struct.pack(">I", len(payload) + 8) + payload
     )
 
 
-def write_png(path: Path, w: int, h: int, data: bytearray) -> None:
-    def chunk(name: bytes, payload: bytes) -> bytes:
-        crc = zlib.crc32(name + payload) & 0xFFFFFFFF
-        return struct.pack(">I", len(payload)) + name + payload + struct.pack(">I", crc)
+def icon_group() -> str:
+    # Embed the source artwork, so GitHub SVGs have no external dependencies.
+    source = ET.parse(RESOURCES / "icon.svg").getroot()
+    ET.register_namespace("", SVG_NS)
+    return "\n".join(
+        ET.tostring(element, encoding="unicode")
+        for element in source
+        if element.tag not in {f"{{{SVG_NS}}}title", f"{{{SVG_NS}}}desc"}
+    )
 
-    sig = b"\x89PNG\r\n\x1a\n"
-    ihdr = struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0)
-    rows = b"".join(b"\x00" + data[y * w * 4:(y + 1) * w * 4] for y in range(h))
-    idat = zlib.compress(rows, 9)
-    with path.open("wb") as f:
-        f.write(sig)
-        f.write(chunk(b"IHDR", ihdr))
-        f.write(chunk(b"IDAT", idat))
-        f.write(chunk(b"IEND", b""))
+
+def write_svg(name: str, width: int, height: int, body: str, title: str) -> Path:
+    path = IMAGES / name
+    path.write_text(
+        f'<svg xmlns="{SVG_NS}" width="{width}" height="{height}" '
+        f'viewBox="0 0 {width} {height}">\n'
+        f'  <title>{title}</title>\n{body}\n</svg>\n',
+        encoding="utf-8",
+    )
+    return path
+
+
+def write_github_assets() -> None:
+    IMAGES.mkdir(parents=True, exist_ok=True)
+    artwork = icon_group()
+    for theme, ink in (("light", "#1F2430"), ("dark", "#E6E8EF")):
+        logo = write_svg(
+            f"logo-{theme}.svg", 600, 200,
+            f'<g transform="translate(0 0) scale(.390625)" fill="none">{artwork}</g>\n'
+            f'<text x="228" y="133" fill="{ink}" '
+            'font-family="Avenir Next, Avenir, Arial, sans-serif" font-size="100" '
+            'font-weight="600" letter-spacing="-4">postest</text>',
+            "Postest",
+        )
+        logo.with_suffix(".png").write_bytes(render(logo, 1200, 400))
+
+    social = write_svg(
+        "github-social-preview.svg", 1280, 640,
+        '<rect width="1280" height="640" fill="#0F1117"/>\n'
+        '<rect x="64" y="64" width="1152" height="512" rx="32" '
+        'fill="#161925" stroke="#29334C" stroke-width="2"/>\n'
+        f'<g transform="translate(256 164) scale(.61)" fill="none">{artwork}</g>\n'
+        '<text x="618" y="309" fill="#E6E8EF" '
+        'font-family="Avenir Next, Avenir, Arial, sans-serif" font-size="112" '
+        'font-weight="600" letter-spacing="-4">postest</text>\n'
+        '<text x="624" y="375" fill="#A9AFBD" '
+        'font-family="Avenir Next, Avenir, Arial, sans-serif" font-size="30">'
+        'A modern REST API client</text>\n'
+        '<path d="M624 416H688" stroke="#3CD9B4" stroke-width="6" '
+        'stroke-linecap="round"/>',
+        "Postest — a modern REST API client",
+    )
+    social.with_suffix(".png").write_bytes(render(social, 1280, 640))
 
 
 def main() -> None:
-    buf = bytearray(W * H * 4)  # transparent background
-
-    # Background with stroke
-    fill_round_rect_grad(buf, 32, 32, 448, 448, 56, BG_START, BG_END)
-    stroke_round_rect(buf, 32, 32, 448, 448, 56, 3, STROKE)
-
-    # Stylized P
-    bx, by = 112, 112
-    # vertical bar
-    for y in range(288):
-        r, g, b = grad(P_MAIN_A, P_MAIN_B, y / 288)
-        for x in range(48):
-            set_px(buf, bx + x, by + y, (r, g, b, 255))
-    # top bar
-    for y in range(48):
-        r, g, b = grad(P_MAIN_A, P_MAIN_B, y / 48)
-        for x in range(160):
-            set_px(buf, bx + 32 + x, by + y, (r, g, b, 255))
-    # right connector
-    for y in range(112):
-        r, g, b = grad(P_MAIN_A, P_MAIN_B, y / 112)
-        for x in range(48):
-            set_px(buf, bx + 144 + x, by + 32 + y, (r, g, b, 255))
-    # middle bar
-    for y in range(48):
-        r, g, b = grad(P_MAIN_A, P_MAIN_B, y / 48)
-        for x in range(128):
-            set_px(buf, bx + 32 + x, by + 112 + y, (r, g, b, 255))
-
-    # Request arrow (right)
-    ax, ay = 340, 180
-    for x in range(80):
-        r, g, b = grad(ARROW_A, ARROW_B, x / 79 if 79 else 0)
-        for y in range(16):
-            set_px(buf, ax + x, ay + 16 + y, (r, g, b, 255))
-    for y in range(48):
-        maxx = 80 + y * (32 / 24) if y <= 24 else 112 - (y - 24) * (32 / 24)
-        for x in range(80, int(maxx) + 1):
-            r, g, b = grad(ARROW_A, ARROW_B, min(max((x - 80) / 32, 0), 1))
-            set_px(buf, ax + x, ay + y, (r, g, b, 255))
-
-    # Response arrow (left)
-    bx2, by2 = 340, 300
-    for y in range(48):
-        minx = 32 - y * (32 / 24) if y <= 24 else (y - 24) * (32 / 24)
-        for x in range(int(minx), 33):
-            set_px(buf, bx2 + x, by2 + y, (*RESP_COLOR, 255))
-    for x in range(80):
-        for y in range(16):
-            set_px(buf, bx2 + 32 + x, by2 + 16 + y, (*RESP_COLOR, 255))
-
-    out_path = Path("src/main/resources/icon.png")
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    write_png(out_path, W, H, buf)
-    print(f"Regenerated {out_path} (transparent padding, visible stroke corners)")
+    if not shutil.which("rsvg-convert"):
+        raise SystemExit("rsvg-convert is required. Install librsvg, then rerun this script.")
+    source = RESOURCES / "icon.svg"
+    images = {size: render(source, size, size)
+              for size in (16, 24, 32, 48, 64, 128, 256, 512, 1024)}
+    (RESOURCES / "icon.png").write_bytes(images[1024])
+    write_ico(images)
+    write_icns(images)
+    write_github_assets()
+    print("Regenerated application icons and GitHub branding from icon.svg")
 
 
 if __name__ == "__main__":
