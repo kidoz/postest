@@ -151,3 +151,6 @@ DELETE FROM HistoryEntry WHERE id = ?;
 
 clearHistory:
 DELETE FROM HistoryEntry;
+
+deleteOldHistory:
+DELETE FROM HistoryEntry WHERE id NOT IN (SELECT id FROM HistoryEntry ORDER BY timestamp DESC LIMIT 200);

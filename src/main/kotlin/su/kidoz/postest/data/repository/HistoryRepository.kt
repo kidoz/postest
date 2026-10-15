@@ -68,10 +68,11 @@ class HistoryRepository(
                 duration = entry.duration,
                 timestamp = entry.timestamp,
             )
+            database.postestQueries.deleteOldHistory()
 
             // Incremental update: prepend new entry (history is ordered newest first)
             _history.update { currentHistory ->
-                listOf(entryWithId) + currentHistory
+                (listOf(entryWithId) + currentHistory).take(200)
             }
         }
 

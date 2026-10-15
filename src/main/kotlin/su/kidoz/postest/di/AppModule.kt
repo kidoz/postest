@@ -53,7 +53,27 @@ private fun createDatabaseDriver(): SqlDriver {
             throw e
         }
     }
+    configureDriver(driver)
     return driver
+}
+
+private fun configureDriver(driver: SqlDriver) {
+    // Enable FK enforcement so ON DELETE CASCADE clauses in the schema actually work
+    driver.execute(null, "PRAGMA foreign_keys = ON", 0)
+
+    // Indexes for frequent lookups; IF NOT EXISTS keeps them idempotent for fresh and existing databases
+    driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_collection_item_collection_id ON CollectionItem(collection_id)", 0)
+    driver.execute(
+        null,
+        "CREATE INDEX IF NOT EXISTS idx_collection_item_parent_folder_id ON CollectionItem(parent_folder_id)",
+        0,
+    )
+    driver.execute(
+        null,
+        "CREATE INDEX IF NOT EXISTS idx_environment_variable_environment_id ON EnvironmentVariable(environment_id)",
+        0,
+    )
+    driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_history_entry_timestamp ON HistoryEntry(timestamp)", 0)
 }
 
 private fun runMigrations(driver: SqlDriver) {
