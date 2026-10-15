@@ -61,11 +61,17 @@ class OpenAPIImporter {
             val trimmed = content.trimStart()
             val asJson =
                 when {
-                    trimmed.startsWith("{") -> trimmed
+                    trimmed.startsWith("{") -> {
+                        trimmed
+                    }
+
                     trimmed.startsWith("---") || trimmed.startsWith("openapi:") -> {
                         yamlToJson(trimmed) ?: return false
                     }
-                    else -> return false
+
+                    else -> {
+                        return false
+                    }
                 }
             val jsonElement = json.parseToJsonElement(asJson)
             if (jsonElement !is JsonObject) return false
@@ -319,20 +325,38 @@ class OpenAPIImporter {
 
     private fun yamlNodeToJsonElement(node: Any?): JsonElement =
         when (node) {
-            null -> JsonNull
-            is Map<*, *> ->
+            null -> {
+                JsonNull
+            }
+
+            is Map<*, *> -> {
                 JsonObject(
                     node
                         .mapNotNull { (k, v) ->
                             (k as? String)?.let { key -> key to yamlNodeToJsonElement(v) }
                         }.toMap(),
                 )
-            is Iterable<*> ->
+            }
+
+            is Iterable<*> -> {
                 JsonArray(node.map { yamlNodeToJsonElement(it) })
-            is Boolean -> JsonPrimitive(node)
-            is Number -> JsonPrimitive(node)
-            is String -> JsonPrimitive(node)
-            else -> JsonPrimitive(node.toString())
+            }
+
+            is Boolean -> {
+                JsonPrimitive(node)
+            }
+
+            is Number -> {
+                JsonPrimitive(node)
+            }
+
+            is String -> {
+                JsonPrimitive(node)
+            }
+
+            else -> {
+                JsonPrimitive(node.toString())
+            }
         }
 
     private inline fun <reified T> resolveRef(
@@ -470,6 +494,7 @@ class OpenAPIImporter {
                     }
                 json.encodeToString(JsonObject.serializer(), obj)
             }
+
             "array" -> {
                 val itemSchema = schema.items
                 if (itemSchema != null) {
@@ -479,6 +504,7 @@ class OpenAPIImporter {
                     "[]"
                 }
             }
+
             "string" -> {
                 when (schema.format) {
                     "date" -> "\"2024-01-01\""
@@ -489,9 +515,18 @@ class OpenAPIImporter {
                     else -> "\"string\""
                 }
             }
-            "integer", "number" -> "0"
-            "boolean" -> "true"
-            else -> "\"\""
+
+            "integer", "number" -> {
+                "0"
+            }
+
+            "boolean" -> {
+                "true"
+            }
+
+            else -> {
+                "\"\""
+            }
         }
     }
 
@@ -520,6 +555,7 @@ class OpenAPIImporter {
                     }
                 }
             }
+
             "array" -> {
                 val itemSchema = schema.items
                 if (itemSchema != null) {
@@ -528,7 +564,8 @@ class OpenAPIImporter {
                     JsonArray(emptyList())
                 }
             }
-            "string" ->
+
+            "string" -> {
                 JsonPrimitive(
                     when (schema.format) {
                         "date" -> "2024-01-01"
@@ -539,10 +576,23 @@ class OpenAPIImporter {
                         else -> "string"
                     },
                 )
-            "integer" -> JsonPrimitive(0)
-            "number" -> JsonPrimitive(0.0)
-            "boolean" -> JsonPrimitive(true)
-            else -> JsonPrimitive("")
+            }
+
+            "integer" -> {
+                JsonPrimitive(0)
+            }
+
+            "number" -> {
+                JsonPrimitive(0.0)
+            }
+
+            "boolean" -> {
+                JsonPrimitive(true)
+            }
+
+            else -> {
+                JsonPrimitive("")
+            }
         }
     }
 
@@ -604,6 +654,7 @@ class OpenAPIImporter {
                     else -> null
                 }
             }
+
             "apikey" -> {
                 AuthConfig.ApiKey(
                     key = scheme.name ?: "",
@@ -615,7 +666,10 @@ class OpenAPIImporter {
                         },
                 )
             }
-            else -> null
+
+            else -> {
+                null
+            }
         }
 
     private fun convertMethod(method: String): HttpMethod =

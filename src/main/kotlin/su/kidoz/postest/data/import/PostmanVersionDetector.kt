@@ -43,10 +43,14 @@ object PostmanVersionDetector {
             if (schema != null) {
                 return when {
                     schema.contains("v2.1.0") -> PostmanVersion.V2_1
+
                     schema.contains("v2.0.0") -> PostmanVersion.V2_0
+
                     schema.contains("v1.0.0") -> PostmanVersion.V1
+
                     // Default to v2.1 if schema URL contains postman but version is unclear
                     schema.contains("postman") -> PostmanVersion.V2_1
+
                     else -> detectByStructure(jsonObject)
                 }
             }

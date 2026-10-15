@@ -88,6 +88,7 @@ class ImportCollectionUseCase(
                 }
                 result
             }
+
             postmanImporter.isPostmanCollection(content) -> {
                 logger.info { "Detected Postman collection format" }
                 val result = postmanImporter.import(content)
@@ -96,6 +97,7 @@ class ImportCollectionUseCase(
                 }
                 result
             }
+
             else -> {
                 logger.warn { "Unknown collection format" }
                 Result.failure(

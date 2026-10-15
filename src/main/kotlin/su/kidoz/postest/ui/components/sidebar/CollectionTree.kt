@@ -352,7 +352,7 @@ private fun CollectionItemNode(
     onDeleteItem: (CollectionItem) -> Unit,
 ) {
     when (item) {
-        is CollectionItem.Request ->
+        is CollectionItem.Request -> {
             RequestItemNode(
                 item = item,
                 depth = depth,
@@ -360,7 +360,9 @@ private fun CollectionItemNode(
                 onRename = { newName -> onRenameItem(item, newName) },
                 onDelete = { onDeleteItem(item) },
             )
-        is CollectionItem.Folder ->
+        }
+
+        is CollectionItem.Folder -> {
             FolderItemNode(
                 item = item,
                 depth = depth,
@@ -368,6 +370,7 @@ private fun CollectionItemNode(
                 onRenameItem = onRenameItem,
                 onDeleteItem = onDeleteItem,
             )
+        }
     }
 }
 

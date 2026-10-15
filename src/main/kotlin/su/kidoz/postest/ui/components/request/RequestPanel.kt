@@ -58,31 +58,35 @@ fun RequestPanel(
         // Tab Content
         Box(modifier = Modifier.weight(1f)) {
             when (selectedTab) {
-                0 ->
+                0 -> {
                     ParamsEditor(
                         params = request.queryParams,
                         onParamsChange = { onRequestChange(request.copy(queryParams = it)) },
                     )
+                }
 
-                1 ->
+                1 -> {
                     HeadersEditor(
                         headers = request.headers,
                         onHeadersChange = { onRequestChange(request.copy(headers = it)) },
                     )
+                }
 
-                2 ->
+                2 -> {
                     BodyEditor(
                         body = request.body,
                         onBodyChange = { onRequestChange(request.copy(body = it)) },
                     )
+                }
 
-                3 ->
+                3 -> {
                     AuthPanel(
                         auth = request.auth,
                         clientCertificate = request.clientCertificate,
                         onAuthChange = { onRequestChange(request.copy(auth = it)) },
                         onClientCertChange = { onRequestChange(request.copy(clientCertificate = it)) },
                     )
+                }
             }
         }
     }

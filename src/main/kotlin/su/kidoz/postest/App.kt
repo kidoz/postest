@@ -33,9 +33,11 @@ fun App() {
                 is AppSideEffect.ShowToast -> {
                     snackbarHostState.showSnackbar(sideEffect.message)
                 }
+
                 is AppSideEffect.ShowError -> {
                     snackbarHostState.showSnackbar("Error: ${sideEffect.message}")
                 }
+
                 is AppSideEffect.NavigateToSettings -> {
                     // Handle navigation if needed
                 }

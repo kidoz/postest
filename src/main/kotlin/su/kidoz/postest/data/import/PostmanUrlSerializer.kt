@@ -26,6 +26,7 @@ object PostmanUrlSerializer : KSerializer<PostmanUrl> {
                 // URL is a simple string
                 PostmanUrl(raw = element.content)
             }
+
             is JsonObject -> {
                 // URL is an object
                 val json = Json { ignoreUnknownKeys = true }
@@ -66,7 +67,10 @@ object PostmanUrlSerializer : KSerializer<PostmanUrl> {
                         },
                 )
             }
-            else -> PostmanUrl()
+
+            else -> {
+                PostmanUrl()
+            }
         }
     }
 

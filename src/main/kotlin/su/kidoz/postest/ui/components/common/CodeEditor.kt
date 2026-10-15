@@ -143,6 +143,7 @@ private fun highlightJson(
                     }
                     i = endQuote + 1
                 }
+
                 text[i].isDigit() || (text[i] == '-' && i + 1 < text.length && text[i + 1].isDigit()) -> {
                     val start = i
 
@@ -154,24 +155,28 @@ private fun highlightJson(
                         append(text.substring(start, i))
                     }
                 }
+
                 text.substring(i).startsWith("true") -> {
                     withStyle(SpanStyle(color = colors.syntaxBoolean)) {
                         append("true")
                     }
                     i += 4
                 }
+
                 text.substring(i).startsWith("false") -> {
                     withStyle(SpanStyle(color = colors.syntaxBoolean)) {
                         append("false")
                     }
                     i += 5
                 }
+
                 text.substring(i).startsWith("null") -> {
                     withStyle(SpanStyle(color = colors.syntaxNull)) {
                         append("null")
                     }
                     i += 4
                 }
+
                 else -> {
                     append(text[i])
                     i++
@@ -211,6 +216,7 @@ private fun highlightXml(
                     }
                     i = end
                 }
+
                 // CDATA section: <![CDATA[ ... ]]>
                 text.substring(i).startsWith("<![CDATA[") -> {
                     val endCdata = text.indexOf("]]>", i)
@@ -220,6 +226,7 @@ private fun highlightXml(
                     }
                     i = end
                 }
+
                 // XML declaration or processing instruction: <?...?>
                 text.substring(i).startsWith("<?") -> {
                     val endPi = text.indexOf("?>", i)
@@ -229,10 +236,12 @@ private fun highlightXml(
                     }
                     i = end
                 }
+
                 // Opening or closing tag
                 text[i] == '<' -> {
                     i = parseXmlTag(text, i, colors, this)
                 }
+
                 else -> {
                     // Regular text content
                     val nextTag = text.indexOf('<', i)
@@ -291,12 +300,14 @@ private fun parseXmlTag(
                     append(tagContent[j])
                     j++
                 }
+
                 tagContent[j] == '/' || tagContent[j] == '>' -> {
                     withStyle(SpanStyle(color = colors.syntaxKeyword)) {
                         append(tagContent[j])
                     }
                     j++
                 }
+
                 tagContent[j] == '"' || tagContent[j] == '\'' -> {
                     // Attribute value
                     val quote = tagContent[j]
@@ -307,10 +318,12 @@ private fun parseXmlTag(
                     }
                     j = end
                 }
+
                 tagContent[j] == '=' -> {
                     append("=")
                     j++
                 }
+
                 else -> {
                     // Attribute name
                     val attrStart = j

@@ -68,6 +68,7 @@ class CollectionRepository(
                         request = request,
                     )
                 }
+
                 "folder" -> {
                     val children = loadCollectionItems(collectionId, dbItem.id)
                     CollectionItem.Folder(
@@ -77,6 +78,7 @@ class CollectionRepository(
                         items = children,
                     )
                 }
+
                 else -> {
                     logger.error { "Unknown collection item type: ${dbItem.type} for item ${dbItem.id}" }
                     throw IllegalStateException("Unknown collection item type: ${dbItem.type}")
@@ -372,6 +374,7 @@ class CollectionRepository(
                         position = index.toLong(),
                     )
                 }
+
                 is CollectionItem.Folder -> {
                     database.postestQueries.insertCollectionItem(
                         id = item.id,
@@ -409,13 +412,17 @@ class CollectionRepository(
             // Find the parent folder and add to it
             items.map { item ->
                 when (item) {
-                    is CollectionItem.Folder ->
+                    is CollectionItem.Folder -> {
                         if (item.id == parentFolderId) {
                             item.copy(items = item.items + newItem)
                         } else {
                             item.copy(items = addItemToCollection(item.items, newItem, parentFolderId))
                         }
-                    is CollectionItem.Request -> item
+                    }
+
+                    is CollectionItem.Request -> {
+                        item
+                    }
                 }
             }
         }
@@ -432,9 +439,13 @@ class CollectionRepository(
             .filter { it.id != itemId }
             .map { item ->
                 when (item) {
-                    is CollectionItem.Folder ->
+                    is CollectionItem.Folder -> {
                         item.copy(items = removeItemFromCollection(item.items, itemId))
-                    is CollectionItem.Request -> item
+                    }
+
+                    is CollectionItem.Request -> {
+                        item
+                    }
                 }
             }
 
@@ -449,14 +460,17 @@ class CollectionRepository(
     ): List<CollectionItem> =
         items.map { item ->
             when (item) {
-                is CollectionItem.Request ->
+                is CollectionItem.Request -> {
                     if (item.id == itemId) item.copy(name = newName) else item
-                is CollectionItem.Folder ->
+                }
+
+                is CollectionItem.Folder -> {
                     if (item.id == itemId) {
                         item.copy(name = newName)
                     } else {
                         item.copy(items = renameItemInCollection(item.items, itemId, newName))
                     }
+                }
             }
         }
 }

@@ -183,6 +183,7 @@ private fun showUpdateResult(result: UpdateCheckResult) {
                     val downloadUrl = info.downloadUrl ?: info.htmlUrl
                     openUrl(downloadUrl)
                 }
+
                 1 -> {
                     // View on GitHub
                     openUrl(info.htmlUrl)

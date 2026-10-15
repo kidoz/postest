@@ -43,11 +43,13 @@ class PostmanImporter {
             PostmanVersionDetector.PostmanVersion.V1 -> {
                 v1Importer.import(jsonString)
             }
+
             PostmanVersionDetector.PostmanVersion.V2_0,
             PostmanVersionDetector.PostmanVersion.V2_1,
             -> {
                 importV2(jsonString)
             }
+
             PostmanVersionDetector.PostmanVersion.UNKNOWN -> {
                 // Try v2.x first as it's more common
                 logger.warn { "Unknown Postman version, attempting v2.x import" }
@@ -190,25 +192,37 @@ class PostmanImporter {
                 val language = body.options?.raw?.language
                 val content = body.raw ?: ""
                 when (language) {
-                    "json" -> RequestBody.Json(formatJsonSafely(content))
-                    "xml" -> RequestBody.Xml(formatXmlSafely(content))
+                    "json" -> {
+                        RequestBody.Json(formatJsonSafely(content))
+                    }
+
+                    "xml" -> {
+                        RequestBody.Xml(formatXmlSafely(content))
+                    }
+
                     else -> {
                         // Check if content looks like JSON
                         val trimmed = content.trim()
                         when {
-                            trimmed.startsWith("{") || trimmed.startsWith("[") ->
+                            trimmed.startsWith("{") || trimmed.startsWith("[") -> {
                                 RequestBody.Json(formatJsonSafely(content))
-                            trimmed.startsWith("<?xml") || trimmed.startsWith("<") ->
+                            }
+
+                            trimmed.startsWith("<?xml") || trimmed.startsWith("<") -> {
                                 RequestBody.Xml(formatXmlSafely(content))
-                            else ->
+                            }
+
+                            else -> {
                                 RequestBody.Raw(
                                     content = content,
                                     contentType = guessContentType(language),
                                 )
+                            }
                         }
                     }
                 }
             }
+
             "urlencoded" -> {
                 RequestBody.FormUrlEncoded(
                     fields =
@@ -222,6 +236,7 @@ class PostmanImporter {
                         } ?: emptyList(),
                 )
             }
+
             "formdata" -> {
                 RequestBody.FormData(
                     fields =
@@ -235,16 +250,21 @@ class PostmanImporter {
                         } ?: emptyList(),
                 )
             }
+
             "graphql" -> {
                 RequestBody.GraphQL(
                     query = body.graphql?.query ?: "",
                     variables = body.graphql?.variables,
                 )
             }
+
             "file" -> {
                 RequestBody.Binary(filePath = body.file?.src ?: "")
             }
-            else -> null
+
+            else -> {
+                null
+            }
         }
     }
 
@@ -260,16 +280,21 @@ class PostmanImporter {
 
     private fun convertAuth(auth: PostmanAuth): AuthConfig? =
         when (auth.type.lowercase()) {
-            "noauth", "none" -> AuthConfig.None
+            "noauth", "none" -> {
+                AuthConfig.None
+            }
+
             "basic" -> {
                 val username = auth.basic?.find { it.key == "username" }?.value ?: ""
                 val password = auth.basic?.find { it.key == "password" }?.value ?: ""
                 AuthConfig.Basic(username = username, password = password)
             }
+
             "bearer" -> {
                 val token = auth.bearer?.find { it.key == "token" }?.value ?: ""
                 AuthConfig.Bearer(token = token)
             }
+
             "apikey" -> {
                 val key = auth.apikey?.find { it.key == "key" }?.value ?: ""
                 val value = auth.apikey?.find { it.key == "value" }?.value ?: ""
@@ -280,6 +305,7 @@ class PostmanImporter {
                     addTo = if (addTo == "query") AuthConfig.ApiKey.AddTo.QUERY_PARAM else AuthConfig.ApiKey.AddTo.HEADER,
                 )
             }
+
             else -> {
                 logger.warn { "Unsupported auth type '${auth.type}', skipping" }
                 null

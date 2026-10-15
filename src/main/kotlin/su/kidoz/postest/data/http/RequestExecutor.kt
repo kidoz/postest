@@ -335,12 +335,15 @@ class RequestExecutor(
             canonical == null -> {
                 throw IllegalArgumentException("Cannot resolve file path: $filePath")
             }
+
             !file.exists() -> {
                 throw java.io.FileNotFoundException("Binary file does not exist: $filePath")
             }
+
             !file.isFile -> {
                 throw IllegalArgumentException("Path is not a regular file: $filePath")
             }
+
             !canonical.startsWith(home) -> {
                 throw SecurityException("Binary file must be within user home directory")
             }

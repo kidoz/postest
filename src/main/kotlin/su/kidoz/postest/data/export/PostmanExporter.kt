@@ -109,7 +109,7 @@ class PostmanExporter {
 
     private fun convertItem(item: CollectionItem): PostmanItem =
         when (item) {
-            is CollectionItem.Request ->
+            is CollectionItem.Request -> {
                 PostmanItem(
                     name = item.name,
                     description = null,
@@ -117,7 +117,9 @@ class PostmanExporter {
                     item = null,
                     auth = item.request.auth?.let { convertAuth(it) },
                 )
-            is CollectionItem.Folder ->
+            }
+
+            is CollectionItem.Folder -> {
                 PostmanItem(
                     name = item.name,
                     description = item.description.ifBlank { null },
@@ -125,6 +127,7 @@ class PostmanExporter {
                     item = item.items.map { convertItem(it) },
                     auth = null,
                 )
+            }
         }
 
     private fun convertRequest(request: HttpRequest): PostmanRequest =
@@ -220,7 +223,7 @@ class PostmanExporter {
 
     private fun convertBody(body: RequestBody): PostmanBody =
         when (body) {
-            is RequestBody.Json ->
+            is RequestBody.Json -> {
                 PostmanBody(
                     mode = "raw",
                     raw = body.content,
@@ -229,7 +232,9 @@ class PostmanExporter {
                             raw = PostmanRawOptions(language = "json"),
                         ),
                 )
-            is RequestBody.Xml ->
+            }
+
+            is RequestBody.Xml -> {
                 PostmanBody(
                     mode = "raw",
                     raw = body.content,
@@ -238,7 +243,9 @@ class PostmanExporter {
                             raw = PostmanRawOptions(language = "xml"),
                         ),
                 )
-            is RequestBody.Raw ->
+            }
+
+            is RequestBody.Raw -> {
                 PostmanBody(
                     mode = "raw",
                     raw = body.content,
@@ -247,7 +254,9 @@ class PostmanExporter {
                             raw = PostmanRawOptions(language = guessLanguage(body.contentType)),
                         ),
                 )
-            is RequestBody.FormUrlEncoded ->
+            }
+
+            is RequestBody.FormUrlEncoded -> {
                 PostmanBody(
                     mode = "urlencoded",
                     urlencoded =
@@ -261,7 +270,9 @@ class PostmanExporter {
                             )
                         },
                 )
-            is RequestBody.FormData ->
+            }
+
+            is RequestBody.FormData -> {
                 PostmanBody(
                     mode = "formdata",
                     formdata =
@@ -275,12 +286,16 @@ class PostmanExporter {
                             )
                         },
                 )
-            is RequestBody.Binary ->
+            }
+
+            is RequestBody.Binary -> {
                 PostmanBody(
                     mode = "file",
                     file = PostmanFile(src = body.filePath),
                 )
-            is RequestBody.GraphQL ->
+            }
+
+            is RequestBody.GraphQL -> {
                 PostmanBody(
                     mode = "graphql",
                     graphql =
@@ -289,7 +304,11 @@ class PostmanExporter {
                             variables = body.variables,
                         ),
                 )
-            is RequestBody.None -> PostmanBody(mode = null)
+            }
+
+            is RequestBody.None -> {
+                PostmanBody(mode = null)
+            }
         }
 
     private fun guessLanguage(contentType: String?): String =
@@ -304,8 +323,11 @@ class PostmanExporter {
 
     private fun convertAuth(auth: AuthConfig): PostmanAuth? =
         when (auth) {
-            is AuthConfig.None -> PostmanAuth(type = "noauth")
-            is AuthConfig.Basic ->
+            is AuthConfig.None -> {
+                PostmanAuth(type = "noauth")
+            }
+
+            is AuthConfig.Basic -> {
                 PostmanAuth(
                     type = "basic",
                     basic =
@@ -314,7 +336,9 @@ class PostmanExporter {
                             PostmanAuthParam(key = "password", value = auth.password, type = "string"),
                         ),
                 )
-            is AuthConfig.Bearer ->
+            }
+
+            is AuthConfig.Bearer -> {
                 PostmanAuth(
                     type = "bearer",
                     bearer =
@@ -322,7 +346,9 @@ class PostmanExporter {
                             PostmanAuthParam(key = "token", value = auth.token, type = "string"),
                         ),
                 )
-            is AuthConfig.ApiKey ->
+            }
+
+            is AuthConfig.ApiKey -> {
                 PostmanAuth(
                     type = "apikey",
                     apikey =
@@ -340,6 +366,7 @@ class PostmanExporter {
                             ),
                         ),
                 )
+            }
         }
 
     private fun convertVariable(variable: Variable): PostmanVariable =

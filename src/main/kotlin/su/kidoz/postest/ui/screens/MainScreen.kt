@@ -423,6 +423,8 @@ private fun handleKeyboardShortcuts(
             true
         }
 
-        else -> false
+        else -> {
+            false
+        }
     }
 }

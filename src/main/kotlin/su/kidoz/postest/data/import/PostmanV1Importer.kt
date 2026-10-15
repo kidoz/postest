@@ -239,6 +239,7 @@ class PostmanV1Importer {
                     RequestBody.Raw(content = content, contentType = "text/plain")
                 }
             }
+
             "urlencoded" -> {
                 // In v1, urlencoded data might be in 'data' as a string or parsed
                 val dataString = request.data ?: ""
@@ -256,6 +257,7 @@ class PostmanV1Importer {
                         }
                 RequestBody.FormUrlEncoded(fields = fields)
             }
+
             "params", "formdata" -> {
                 val dataString = request.data ?: ""
                 val fields =
@@ -273,9 +275,11 @@ class PostmanV1Importer {
                         }
                 RequestBody.FormData(fields = fields)
             }
+
             "binary" -> {
                 RequestBody.Binary(filePath = request.data ?: "")
             }
+
             "graphql" -> {
                 request.graphqlModeData?.let { graphql ->
                     RequestBody.GraphQL(
@@ -284,7 +288,10 @@ class PostmanV1Importer {
                     )
                 }
             }
-            else -> null
+
+            else -> {
+                null
+            }
         }
     }
 
@@ -305,28 +312,38 @@ class PostmanV1Importer {
                     password = attrs.password ?: "",
                 )
             }
+
             "bearerauth", "bearer" -> {
                 AuthConfig.Bearer(token = attrs.accessToken ?: attrs.token ?: "")
             }
+
             "oauth2" -> {
                 AuthConfig.Bearer(token = attrs.accessToken ?: "")
             }
-            else -> null
+
+            else -> {
+                null
+            }
         }
     }
 
     private fun convertAuth(auth: PostmanAuth): AuthConfig? =
         when (auth.type.lowercase()) {
-            "noauth", "none" -> AuthConfig.None
+            "noauth", "none" -> {
+                AuthConfig.None
+            }
+
             "basic" -> {
                 val username = auth.basic?.find { it.key == "username" }?.value ?: ""
                 val password = auth.basic?.find { it.key == "password" }?.value ?: ""
                 AuthConfig.Basic(username = username, password = password)
             }
+
             "bearer" -> {
                 val token = auth.bearer?.find { it.key == "token" }?.value ?: ""
                 AuthConfig.Bearer(token = token)
             }
+
             "apikey" -> {
                 val key = auth.apikey?.find { it.key == "key" }?.value ?: ""
                 val value = auth.apikey?.find { it.key == "value" }?.value ?: ""
@@ -337,7 +354,10 @@ class PostmanV1Importer {
                     addTo = if (addTo == "query") AuthConfig.ApiKey.AddTo.QUERY_PARAM else AuthConfig.ApiKey.AddTo.HEADER,
                 )
             }
-            else -> null
+
+            else -> {
+                null
+            }
         }
 
     private fun convertMethod(method: String): HttpMethod =

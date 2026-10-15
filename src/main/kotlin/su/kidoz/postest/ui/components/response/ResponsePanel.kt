@@ -217,16 +217,18 @@ private fun ResponseContent(response: HttpResponse) {
 
         Box(modifier = Modifier.weight(1f)) {
             when (selectedTab) {
-                0 ->
+                0 -> {
                     ResponseBody(
                         body = response.body,
                         contentType = response.contentType,
                     )
+                }
 
-                1 ->
+                1 -> {
                     ResponseHeaders(
                         headers = response.headers,
                     )
+                }
             }
         }
     }

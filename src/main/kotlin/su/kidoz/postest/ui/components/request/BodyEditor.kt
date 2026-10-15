@@ -154,8 +154,14 @@ fun BodyEditor(
                                 else -> currentContent
                             }
                         when (selectedType) {
-                            BodyType.JSON -> onBodyChange(RequestBody.Json(formatted))
-                            BodyType.XML -> onBodyChange(RequestBody.Xml(formatted))
+                            BodyType.JSON -> {
+                                onBodyChange(RequestBody.Json(formatted))
+                            }
+
+                            BodyType.XML -> {
+                                onBodyChange(RequestBody.Xml(formatted))
+                            }
+
                             else -> {}
                         }
                     },

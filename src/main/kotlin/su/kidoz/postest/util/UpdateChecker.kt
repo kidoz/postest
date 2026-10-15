@@ -118,10 +118,12 @@ object UpdateChecker {
                             UpdateCheckResult.NoUpdateAvailable
                         }
                     }
+
                     HttpStatusCode.NotFound -> {
                         logger.info { "No releases found on GitHub" }
                         UpdateCheckResult.NoUpdateAvailable
                     }
+
                     else -> {
                         val errorBody = response.bodyAsText()
                         logger.warn { "GitHub API error: ${response.status} - $errorBody" }
