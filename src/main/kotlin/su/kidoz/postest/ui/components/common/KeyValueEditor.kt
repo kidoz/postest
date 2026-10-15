@@ -12,6 +12,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import su.kidoz.postest.domain.model.KeyValue
 
@@ -24,6 +26,7 @@ fun KeyValueEditor(
     keySuggestions: List<String> = emptyList(),
     valueSuggestionsProvider: ((String) -> List<String>)? = null,
     showFilter: Boolean = true,
+    addLabel: String = "Add field",
     modifier: Modifier = Modifier,
 ) {
     var filterText by remember { mutableStateOf("") }
@@ -89,6 +92,25 @@ fun KeyValueEditor(
             }
         }
 
+        Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Spacer(Modifier.width(32.dp))
+            Text(keyPlaceholder, Modifier.weight(1f).padding(start = 12.dp), style = MaterialTheme.typography.labelMedium)
+            Spacer(Modifier.width(8.dp))
+            Text(valuePlaceholder, Modifier.weight(1f).padding(start = 12.dp), style = MaterialTheme.typography.labelMedium)
+            Spacer(Modifier.width(32.dp))
+        }
+
+        if (items.isEmpty()) {
+            Text(
+                "No entries yet. Use “$addLabel” to get started.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(vertical = 8.dp),
+            )
+        } else if (filteredItemsWithIndex.isEmpty()) {
+            Text("No matching entries", style = MaterialTheme.typography.bodySmall)
+        }
+
         LazyColumn(
             modifier = Modifier.weight(1f, fill = false),
             verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -129,7 +151,7 @@ fun KeyValueEditor(
         ) {
             Icon(Icons.Default.Add, contentDescription = null)
             Spacer(Modifier.width(4.dp))
-            Text("Add")
+            Text(addLabel)
         }
     }
 }
@@ -149,6 +171,7 @@ private fun KeyValueRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Checkbox(
+            modifier = Modifier.size(32.dp).semantics { contentDescription = "Enable entry" },
             checked = item.enabled,
             onCheckedChange = { checked ->
                 onItemChange(item.copy(enabled = checked))
@@ -166,14 +189,13 @@ private fun KeyValueRow(
                 modifier = Modifier.weight(1f),
             )
         } else {
-            OutlinedTextField(
+            CompactTextField(
                 value = item.key,
                 onValueChange = { newKey ->
                     onItemChange(item.copy(key = newKey))
                 },
-                placeholder = { Text(keyPlaceholder) },
+                label = keyPlaceholder,
                 modifier = Modifier.weight(1f),
-                singleLine = true,
                 textStyle = MaterialTheme.typography.bodyMedium,
             )
         }
@@ -191,24 +213,22 @@ private fun KeyValueRow(
                 modifier = Modifier.weight(1f),
             )
         } else {
-            OutlinedTextField(
+            CompactTextField(
                 value = item.value,
                 onValueChange = { newValue ->
                     onItemChange(item.copy(value = newValue))
                 },
-                placeholder = { Text(valuePlaceholder) },
+                label = valuePlaceholder,
                 modifier = Modifier.weight(1f),
-                singleLine = true,
                 textStyle = MaterialTheme.typography.bodyMedium,
             )
         }
 
-        IconButton(onClick = onDelete) {
-            Icon(
-                Icons.Default.Delete,
-                contentDescription = "Remove",
-                tint = MaterialTheme.colorScheme.error,
-            )
-        }
+        DesktopIconButton(
+            icon = Icons.Default.Delete,
+            description = "Remove entry",
+            onClick = onDelete,
+            tint = MaterialTheme.colorScheme.error,
+        )
     }
 }

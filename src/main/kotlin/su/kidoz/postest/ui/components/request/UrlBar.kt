@@ -11,6 +11,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.unit.dp
 import su.kidoz.postest.domain.model.HttpMethod
+import su.kidoz.postest.ui.components.common.CompactTextField
+import su.kidoz.postest.ui.theme.MonospaceFont
 
 @Composable
 fun UrlBar(
@@ -35,10 +37,11 @@ fun UrlBar(
             onSelect = onMethodChange,
         )
 
-        OutlinedTextField(
+        CompactTextField(
             value = url,
             onValueChange = onUrlChange,
-            placeholder = { Text("Enter URL or paste cURL") },
+            label = "Enter request URL",
+            textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = MonospaceFont),
             modifier =
                 Modifier
                     .weight(1f)
@@ -53,12 +56,12 @@ fun UrlBar(
                             false
                         }
                     },
-            singleLine = true,
-            shape = RoundedCornerShape(4.dp),
         )
 
         Button(
             onClick = onSend,
+            modifier = Modifier.height(40.dp).widthIn(min = 96.dp),
+            contentPadding = PaddingValues(horizontal = 12.dp),
             enabled = !isLoading && url.isNotBlank(),
             shape = RoundedCornerShape(4.dp),
         ) {

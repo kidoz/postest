@@ -34,18 +34,17 @@ fun AutocompleteTextField(
         onExpandedChange = { expanded = it },
         modifier = modifier,
     ) {
-        OutlinedTextField(
+        CompactTextField(
             value = value,
             onValueChange = { newValue ->
                 onValueChange(newValue)
                 expanded = true
             },
-            placeholder = { Text(placeholder) },
+            label = placeholder,
             modifier =
                 Modifier
                     .fillMaxWidth()
                     .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable),
-            singleLine = true,
             enabled = enabled,
             textStyle = MaterialTheme.typography.bodyMedium,
         )

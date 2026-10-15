@@ -18,6 +18,7 @@ fun HeadersEditor(
         onItemsChange = onHeadersChange,
         keyPlaceholder = "Header name",
         valuePlaceholder = "Header value",
+        addLabel = "Add header",
         keySuggestions = HttpHeaders.commonHeaders,
         valueSuggestionsProvider = { headerName ->
             HttpHeaders.getSuggestionsForHeader(headerName)

@@ -6,6 +6,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import su.kidoz.postest.domain.model.HttpRequest
+import su.kidoz.postest.ui.components.common.SectionTabs
 
 @Composable
 fun RequestPanel(
@@ -30,30 +31,20 @@ fun RequestPanel(
         var selectedTab by remember { mutableStateOf(0) }
         val tabs = listOf("Params", "Headers", "Body", "Auth")
 
-        TabRow(selectedTabIndex = selectedTab) {
-            tabs.forEachIndexed { index, title ->
-                Tab(
-                    selected = selectedTab == index,
-                    onClick = { selectedTab = index },
-                    text = {
-                        Row {
-                            Text(title)
-                            // Show count badges
-                            val count =
-                                when (index) {
-                                    0 -> request.queryParams.count { it.enabled && it.key.isNotBlank() }
-                                    1 -> request.headers.count { it.enabled && it.key.isNotBlank() }
-                                    else -> 0
-                                }
-                            if (count > 0) {
-                                Spacer(Modifier.width(4.dp))
-                                Badge { Text(count.toString()) }
-                            }
+        SectionTabs(
+            titles =
+                tabs.mapIndexed { index, title ->
+                    val count =
+                        when (index) {
+                            0 -> request.queryParams.count { it.enabled && it.key.isNotBlank() }
+                            1 -> request.headers.count { it.enabled && it.key.isNotBlank() }
+                            else -> 0
                         }
-                    },
-                )
-            }
-        }
+                    if (count > 0) "$title ($count)" else title
+                },
+            selectedIndex = selectedTab,
+            onSelect = { selectedTab = it },
+        )
 
         // Tab Content
         Box(modifier = Modifier.weight(1f)) {

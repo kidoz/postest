@@ -22,8 +22,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -42,6 +40,7 @@ import su.kidoz.postest.domain.model.isClientError
 import su.kidoz.postest.domain.model.isRedirect
 import su.kidoz.postest.domain.model.isServerError
 import su.kidoz.postest.domain.model.isSuccess
+import su.kidoz.postest.ui.components.common.SectionTabs
 import su.kidoz.postest.ui.theme.AppTheme
 
 @Composable
@@ -205,15 +204,7 @@ private fun ResponseContent(response: HttpResponse) {
     val tabs = listOf("Body", "Headers")
 
     Column(modifier = Modifier.fillMaxSize()) {
-        TabRow(selectedTabIndex = selectedTab) {
-            tabs.forEachIndexed { index, title ->
-                Tab(
-                    selected = selectedTab == index,
-                    onClick = { selectedTab = index },
-                    text = { Text(title) },
-                )
-            }
-        }
+        SectionTabs(titles = tabs, selectedIndex = selectedTab, onSelect = { selectedTab = it })
 
         Box(modifier = Modifier.weight(1f)) {
             when (selectedTab) {

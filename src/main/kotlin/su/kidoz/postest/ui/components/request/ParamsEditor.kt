@@ -17,6 +17,7 @@ fun ParamsEditor(
         onItemsChange = onParamsChange,
         keyPlaceholder = "Parameter name",
         valuePlaceholder = "Parameter value",
+        addLabel = "Add parameter",
         modifier = modifier.fillMaxSize(),
     )
 }
