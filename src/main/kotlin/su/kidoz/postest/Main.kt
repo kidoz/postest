@@ -1,6 +1,11 @@
 package su.kidoz.postest
 
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.toComposeImageBitmap
@@ -22,6 +27,7 @@ import su.kidoz.postest.di.appModules
 import su.kidoz.postest.util.AppVersion
 import su.kidoz.postest.util.UpdateCheckResult
 import su.kidoz.postest.util.UpdateChecker
+import su.kidoz.postest.viewmodel.MainViewModel
 import java.awt.Desktop
 import java.awt.Taskbar
 import java.net.URI
@@ -75,11 +81,35 @@ fun main() {
     }
 
     // Initialize Koin DI
-    startKoin {
-        modules(appModules)
-    }
+    val koin =
+        startKoin {
+            modules(appModules)
+        }.koin
 
     application {
+        val viewModel = remember { koin.get<MainViewModel>() }
+        val scope = rememberCoroutineScope()
+        var isClosing by remember { mutableStateOf(false) }
+        val closeApp: () -> Unit = {
+            scope.launch {
+                if (!isClosing) {
+                    isClosing = true
+                    if (viewModel.prepareToClose()) exitApplication() else isClosing = false
+                }
+            }
+        }
+        DisposableEffect(viewModel) {
+            val desktop = if (Desktop.isDesktopSupported()) Desktop.getDesktop() else null
+            if (desktop?.isSupported(Desktop.Action.APP_QUIT_HANDLER) == true) {
+                desktop.setQuitHandler { _, response ->
+                    response.cancelQuit()
+                    closeApp()
+                }
+            }
+            onDispose {
+                if (desktop?.isSupported(Desktop.Action.APP_QUIT_HANDLER) == true) desktop.setQuitHandler(null)
+            }
+        }
         val windowState =
             rememberWindowState(
                 size = DpSize(1400.dp, 900.dp),
@@ -102,7 +132,7 @@ fun main() {
             }
 
         Window(
-            onCloseRequest = ::exitApplication,
+            onCloseRequest = closeApp,
             state = windowState,
             title = "Postest",
             icon = iconPainter,
@@ -116,7 +146,7 @@ fun main() {
                     )
                 }
             }
-            App()
+            App(viewModel)
         }
     }
 }

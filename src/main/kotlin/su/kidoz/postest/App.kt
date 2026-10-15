@@ -14,8 +14,7 @@ import su.kidoz.postest.viewmodel.AppSideEffect
 import su.kidoz.postest.viewmodel.MainViewModel
 
 @Composable
-fun App() {
-    val viewModel: MainViewModel = koinInject()
+fun App(viewModel: MainViewModel = koinInject()) {
     val state by viewModel.state.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 

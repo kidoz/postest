@@ -5,8 +5,10 @@ import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import su.kidoz.postest.data.db.PostestDatabase
 
 object TestDatabaseFactory {
+    fun createInMemoryDriver(): SqlDriver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+
     fun createInMemoryDatabase(): PostestDatabase {
-        val driver: SqlDriver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        val driver = createInMemoryDriver()
         PostestDatabase.Schema.create(driver)
         return PostestDatabase(driver)
     }

@@ -22,11 +22,13 @@ import su.kidoz.postest.domain.usecase.ImportCollectionUseCase
 import su.kidoz.postest.domain.usecase.ManageCollectionsUseCase
 import su.kidoz.postest.domain.usecase.ManageEnvironmentsUseCase
 import su.kidoz.postest.domain.usecase.ManageHistoryUseCase
+import su.kidoz.postest.domain.usecase.ManageSessionUseCase
 import su.kidoz.postest.viewmodel.manager.CollectionManager
 import su.kidoz.postest.viewmodel.manager.EnvironmentManager
 import su.kidoz.postest.viewmodel.manager.HistoryManager
 import su.kidoz.postest.viewmodel.manager.ImportExportManager
 import su.kidoz.postest.viewmodel.manager.RequestExecutionManager
+import su.kidoz.postest.viewmodel.manager.SessionManager
 import su.kidoz.postest.viewmodel.manager.TabManager
 import java.io.File
 import java.util.UUID
@@ -89,6 +91,7 @@ class MainViewModel(
     manageHistoryUseCase: ManageHistoryUseCase,
     importCollectionUseCase: ImportCollectionUseCase,
     exportCollectionUseCase: ExportCollectionUseCase,
+    manageSessionUseCase: ManageSessionUseCase,
 ) : SideEffectEmitter {
     private val supervisorJob = SupervisorJob()
     private val viewModelScope = CoroutineScope(supervisorJob + Dispatchers.Main)
@@ -109,6 +112,8 @@ class MainViewModel(
 
     // Feature Managers
     private val tabManager = TabManager(stateUpdater) { _state.value }
+
+    private val sessionManager = SessionManager(manageSessionUseCase, state, stateUpdater, this, viewModelScope)
 
     private val historyManager =
         HistoryManager(
@@ -159,6 +164,7 @@ class MainViewModel(
     }
 
     private fun initialize() {
+        sessionManager.initialize()
         // Initialize all managers
         collectionManager.initialize()
         environmentManager.initialize()
@@ -315,6 +321,8 @@ class MainViewModel(
     }
 
     // ========== Cleanup ==========
+
+    suspend fun prepareToClose(): Boolean = sessionManager.prepareToClose()
 
     fun cleanup() {
         logger.info { "MainViewModel cleanup: cancelling all coroutines" }

@@ -154,3 +154,22 @@ DELETE FROM HistoryEntry;
 
 deleteOldHistory:
 DELETE FROM HistoryEntry WHERE id NOT IN (SELECT id FROM HistoryEntry ORDER BY timestamp DESC LIMIT 200);
+
+-- Open tabs and per-format request drafts, saved atomically as one workspace.
+CREATE TABLE WorkspaceSession (
+    id TEXT NOT NULL PRIMARY KEY CHECK (id IN ('current', 'backup')),
+    snapshot_json TEXT NOT NULL
+);
+
+selectWorkspaceSession:
+SELECT snapshot_json FROM WorkspaceSession WHERE id = 'current';
+
+saveWorkspaceSession:
+INSERT OR REPLACE INTO WorkspaceSession(id, snapshot_json) VALUES ('current', ?);
+
+backupWorkspaceSession:
+INSERT OR REPLACE INTO WorkspaceSession(id, snapshot_json)
+SELECT 'backup', snapshot_json FROM WorkspaceSession WHERE id = 'current';
+
+selectWorkspaceSessionBackup:
+SELECT snapshot_json FROM WorkspaceSession WHERE id = 'backup';

@@ -14,12 +14,14 @@ import su.kidoz.postest.data.import.PostmanImporter
 import su.kidoz.postest.data.repository.CollectionRepository
 import su.kidoz.postest.data.repository.EnvironmentRepository
 import su.kidoz.postest.data.repository.HistoryRepository
+import su.kidoz.postest.data.repository.SessionRepository
 import su.kidoz.postest.domain.usecase.ExecuteRequestUseCase
 import su.kidoz.postest.domain.usecase.ExportCollectionUseCase
 import su.kidoz.postest.domain.usecase.ImportCollectionUseCase
 import su.kidoz.postest.domain.usecase.ManageCollectionsUseCase
 import su.kidoz.postest.domain.usecase.ManageEnvironmentsUseCase
 import su.kidoz.postest.domain.usecase.ManageHistoryUseCase
+import su.kidoz.postest.domain.usecase.ManageSessionUseCase
 import su.kidoz.postest.util.VariableResolver
 import su.kidoz.postest.viewmodel.MainViewModel
 import java.io.File
@@ -77,6 +79,7 @@ private fun configureDriver(driver: SqlDriver) {
 }
 
 private fun runMigrations(driver: SqlDriver) {
+    migrateWorkspaceSession(driver)
     // Migration 1: Add error_message column to HistoryEntry table
     try {
         driver.execute(null, "ALTER TABLE HistoryEntry ADD COLUMN error_message TEXT", 0)
@@ -88,6 +91,19 @@ private fun runMigrations(driver: SqlDriver) {
             logger.debug { "Migration error_message column: ${e.message}" }
         }
     }
+}
+
+internal fun migrateWorkspaceSession(driver: SqlDriver) {
+    driver.execute(
+        null,
+        """
+        CREATE TABLE IF NOT EXISTS WorkspaceSession (
+            id TEXT NOT NULL PRIMARY KEY CHECK (id IN ('current', 'backup')),
+            snapshot_json TEXT NOT NULL
+        )
+        """.trimIndent(),
+        0,
+    )
 }
 
 val databaseModule =
@@ -121,6 +137,7 @@ val networkModule =
 
 val repositoryModule =
     module {
+        single<SessionRepository> { SessionRepository(get()) }
         single<CollectionRepository> {
             CollectionRepository(get())
         }
@@ -136,6 +153,7 @@ val repositoryModule =
 
 val useCaseModule =
     module {
+        single<ManageSessionUseCase> { ManageSessionUseCase(get()) }
         single<ExecuteRequestUseCase> {
             ExecuteRequestUseCase(get(), get())
         }
@@ -176,7 +194,7 @@ val useCaseModule =
 val viewModelModule =
     module {
         single<MainViewModel> {
-            MainViewModel(get(), get(), get(), get(), get(), get())
+            MainViewModel(get(), get(), get(), get(), get(), get(), get())
         }
     }
 

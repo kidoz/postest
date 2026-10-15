@@ -26,6 +26,7 @@ import su.kidoz.postest.domain.usecase.ImportCollectionUseCase
 import su.kidoz.postest.domain.usecase.ManageCollectionsUseCase
 import su.kidoz.postest.domain.usecase.ManageEnvironmentsUseCase
 import su.kidoz.postest.domain.usecase.ManageHistoryUseCase
+import su.kidoz.postest.domain.usecase.ManageSessionUseCase
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -45,6 +46,7 @@ class MainViewModelTest {
     private lateinit var manageHistoryUseCase: ManageHistoryUseCase
     private lateinit var importCollectionUseCase: ImportCollectionUseCase
     private lateinit var exportCollectionUseCase: ExportCollectionUseCase
+    private lateinit var manageSessionUseCase: ManageSessionUseCase
 
     private val collectionsFlow = MutableStateFlow<List<RequestCollection>>(emptyList())
     private val environmentsFlow = MutableStateFlow<List<Environment>>(emptyList())
@@ -75,6 +77,11 @@ class MainViewModelTest {
             }
         importCollectionUseCase = mockk()
         exportCollectionUseCase = mockk()
+        manageSessionUseCase =
+            mockk {
+                coEvery { load() } returns null
+                coEvery { save(any()) } returns Unit
+            }
     }
 
     @AfterTest
@@ -90,6 +97,7 @@ class MainViewModelTest {
             manageHistoryUseCase,
             importCollectionUseCase,
             exportCollectionUseCase,
+            manageSessionUseCase,
         )
 
     @Test

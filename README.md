@@ -22,6 +22,7 @@ A modern, lightweight REST API client built with Kotlin and Compose Multiplatfor
 - **Environments** - Manage variables across different environments
 - **Variable Substitution** - Use `{{variable}}` syntax in URLs, headers, and body
 - **History** - Track and replay previous requests
+- **Draft Recovery** - Restore open tabs, selected requests, and per-format body drafts after restarting; edits autosave locally
 - **Response Viewer** - Formatted JSON, headers, cookies, and timing info
 - **Dark & Light Themes** - Modern UI with toggleable dark and light themes
 
