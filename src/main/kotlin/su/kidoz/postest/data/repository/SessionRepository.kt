@@ -6,18 +6,19 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import su.kidoz.postest.data.db.PostestDatabase
 import su.kidoz.postest.domain.model.DraftSession
+import su.kidoz.postest.domain.port.DraftSessionStore
 
 /** Stores one atomic workspace snapshot in the application's existing database. */
 class SessionRepository(
     private val database: PostestDatabase,
-) {
+) : DraftSessionStore {
     private val json =
         Json {
             ignoreUnknownKeys = true
             encodeDefaults = true
         }
 
-    suspend fun load(): DraftSession? =
+    override suspend fun load(): DraftSession? =
         withContext(Dispatchers.IO) {
             val stored = database.postestQueries.selectWorkspaceSession().executeAsOneOrNull() ?: return@withContext null
             try {
@@ -35,8 +36,9 @@ class SessionRepository(
             }
         }
 
-    suspend fun save(session: DraftSession) =
+    override suspend fun save(session: DraftSession) {
         withContext(Dispatchers.IO) {
             database.postestQueries.saveWorkspaceSession(json.encodeToString(session))
         }
+    }
 }
