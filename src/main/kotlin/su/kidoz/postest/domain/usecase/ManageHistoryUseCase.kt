@@ -1,8 +1,8 @@
 package su.kidoz.postest.domain.usecase
 
 import kotlinx.coroutines.flow.Flow
-import su.kidoz.postest.data.repository.HistoryRepository
 import su.kidoz.postest.domain.model.HistoryEntry
+import su.kidoz.postest.domain.port.HistoryRepository
 
 class ManageHistoryUseCase(
     private val historyRepository: HistoryRepository,

@@ -1,15 +1,11 @@
 package su.kidoz.postest.domain.usecase
 
 import io.github.oshai.kotlinlogging.KotlinLogging
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import su.kidoz.postest.data.import.ImportException
-import su.kidoz.postest.data.import.OpenAPIImporter
-import su.kidoz.postest.data.import.PostmanImporter
-import su.kidoz.postest.data.repository.CollectionRepository
 import su.kidoz.postest.domain.model.RequestCollection
-import java.io.File
-import java.io.IOException
+import su.kidoz.postest.domain.port.CollectionDecoder
+import su.kidoz.postest.domain.port.CollectionFiles
+import su.kidoz.postest.domain.port.CollectionRepository
+import su.kidoz.postest.domain.port.ImportException
 
 private val logger = KotlinLogging.logger {}
 
@@ -21,53 +17,27 @@ private val logger = KotlinLogging.logger {}
  */
 class ImportCollectionUseCase(
     private val collectionRepository: CollectionRepository,
-    private val postmanImporter: PostmanImporter,
-    private val openAPIImporter: OpenAPIImporter,
+    private val postmanImporter: CollectionDecoder,
+    private val openAPIImporter: CollectionDecoder,
+    private val files: CollectionFiles,
 ) {
     companion object {
         /** Maximum file size for import (50 MB) */
-        private const val MAX_FILE_SIZE_BYTES = 50L * 1024 * 1024
+        private const val MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024
     }
 
     /**
      * Import a collection from a file.
      * Automatically detects the format based on content.
      *
-     * @param file The file to import
+     * @param path The file path to import
      * @return Result containing the imported collection or an error
      */
-    suspend fun importFromFile(file: File): Result<RequestCollection> {
-        logger.info { "Importing collection from file: ${file.absolutePath}" }
-
-        if (!file.exists()) {
-            return Result.failure(ImportException("File not found: ${file.absolutePath}"))
-        }
-
-        if (!file.canRead()) {
-            return Result.failure(ImportException("Cannot read file: ${file.absolutePath}"))
-        }
-
-        // Check file size to prevent memory exhaustion
-        val fileSize = file.length()
-        if (fileSize > MAX_FILE_SIZE_BYTES) {
-            val sizeMB = fileSize / (1024 * 1024)
-            val maxMB = MAX_FILE_SIZE_BYTES / (1024 * 1024)
-            logger.warn { "File too large for import: ${sizeMB}MB (max: ${maxMB}MB)" }
-            return Result.failure(
-                ImportException("File is too large (${sizeMB}MB). Maximum allowed size is ${maxMB}MB."),
-            )
-        }
-
-        val content =
-            try {
-                withContext(Dispatchers.IO) { file.readText(Charsets.UTF_8) }
-            } catch (e: IOException) {
-                logger.error(e) { "Failed to read file: ${file.absolutePath}" }
-                return Result.failure(ImportException("Failed to read file: ${e.message}", e))
-            }
-
-        return importFromString(content)
-    }
+    suspend fun importFromFile(path: String): Result<RequestCollection> =
+        files.read(path, MAX_FILE_SIZE_BYTES).fold(
+            onSuccess = { importFromString(it) },
+            onFailure = { Result.failure(it) },
+        )
 
     /**
      * Import a collection from a JSON string.
@@ -80,14 +50,14 @@ class ImportCollectionUseCase(
         // Detect format and import
         // Check OpenAPI first since it has a more specific marker ("openapi": "3.x")
         return when {
-            openAPIImporter.isOpenAPISpec(content) -> {
+            openAPIImporter.recognizes(content) -> {
                 logger.info { "Detected OpenAPI specification format" }
-                persist(openAPIImporter.import(content))
+                persist(openAPIImporter.decode(content))
             }
 
-            postmanImporter.isPostmanCollection(content) -> {
+            postmanImporter.recognizes(content) -> {
                 logger.info { "Detected Postman collection format" }
-                persist(postmanImporter.import(content))
+                persist(postmanImporter.decode(content))
             }
 
             else -> {
@@ -114,7 +84,7 @@ class ImportCollectionUseCase(
                     throw cancelled
                 } catch (error: Exception) {
                     logger.error { "Failed to persist imported collection (${error::class.simpleName})" }
-                    Result.failure(ImportException("Imported collection could not be saved", error))
+                    Result.failure(ImportException("Imported collection could not be saved"))
                 }
             },
             onFailure = { error -> Result.failure(error) },

@@ -29,7 +29,7 @@ class ImportExportManager(
     fun importCollection(file: File) {
         scope.launch {
             logger.info { "Importing collection from file: ${file.absolutePath}" }
-            val result = importCollectionUseCase.importFromFile(file)
+            val result = importCollectionUseCase.importFromFile(file.path)
             result.fold(
                 onSuccess = { collection ->
                     sideEffectEmitter.emit(
@@ -61,7 +61,7 @@ class ImportExportManager(
             }
 
             logger.info { "Exporting collection '${collection.name}' to: ${file.absolutePath}" }
-            val result = exportCollectionUseCase.exportToPostman(collection, file)
+            val result = exportCollectionUseCase.exportToPostman(collection, file.path)
             result.fold(
                 onSuccess = {
                     sideEffectEmitter.emit(

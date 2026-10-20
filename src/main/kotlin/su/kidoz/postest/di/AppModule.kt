@@ -8,14 +8,21 @@ import io.ktor.client.*
 import org.koin.dsl.module
 import su.kidoz.postest.data.db.PostestDatabase
 import su.kidoz.postest.data.export.PostmanExporter
+import su.kidoz.postest.data.files.LocalCollectionFiles
 import su.kidoz.postest.data.http.HttpClientFactory
 import su.kidoz.postest.data.http.RequestExecutor
+import su.kidoz.postest.data.import.OpenAPICollectionDecoder
 import su.kidoz.postest.data.import.OpenAPIImporter
+import su.kidoz.postest.data.import.PostmanCollectionDecoder
+import su.kidoz.postest.data.import.PostmanCollectionEncoder
 import su.kidoz.postest.data.import.PostmanImporter
 import su.kidoz.postest.data.repository.CollectionRepository
 import su.kidoz.postest.data.repository.EnvironmentRepository
 import su.kidoz.postest.data.repository.HistoryRepository
 import su.kidoz.postest.data.repository.SessionRepository
+import su.kidoz.postest.domain.port.CollectionFiles
+import su.kidoz.postest.domain.port.DraftSessionStore
+import su.kidoz.postest.domain.port.RequestTransport
 import su.kidoz.postest.domain.usecase.ExecuteRequestUseCase
 import su.kidoz.postest.domain.usecase.ExportCollectionUseCase
 import su.kidoz.postest.domain.usecase.ImportCollectionUseCase
@@ -26,6 +33,9 @@ import su.kidoz.postest.domain.usecase.ManageSessionUseCase
 import su.kidoz.postest.util.VariableResolver
 import su.kidoz.postest.viewmodel.MainViewModel
 import java.io.File
+import su.kidoz.postest.domain.port.CollectionRepository as CollectionRepositoryPort
+import su.kidoz.postest.domain.port.EnvironmentRepository as EnvironmentRepositoryPort
+import su.kidoz.postest.domain.port.HistoryRepository as HistoryRepositoryPort
 
 private val logger = KotlinLogging.logger {}
 
@@ -154,23 +164,24 @@ val networkModule =
             VariableResolver()
         }
 
-        single<RequestExecutor> {
+        single<RequestTransport> {
             RequestExecutor(get(), get())
         }
     }
 
 val repositoryModule =
     module {
-        single<SessionRepository> { SessionRepository(get()) }
-        single<CollectionRepository> {
+        single<CollectionFiles> { LocalCollectionFiles() }
+        single<DraftSessionStore> { SessionRepository(get()) }
+        single<CollectionRepositoryPort> {
             CollectionRepository(get())
         }
 
-        single<EnvironmentRepository> {
+        single<EnvironmentRepositoryPort> {
             EnvironmentRepository(get())
         }
 
-        single<HistoryRepository> {
+        single<HistoryRepositoryPort> {
             HistoryRepository(get())
         }
     }
@@ -207,11 +218,16 @@ val useCaseModule =
         }
 
         single<ImportCollectionUseCase> {
-            ImportCollectionUseCase(get(), get(), get())
+            ImportCollectionUseCase(
+                get(),
+                PostmanCollectionDecoder(get()),
+                OpenAPICollectionDecoder(get()),
+                get(),
+            )
         }
 
         single<ExportCollectionUseCase> {
-            ExportCollectionUseCase(get())
+            ExportCollectionUseCase(PostmanCollectionEncoder(get()), get())
         }
     }
 

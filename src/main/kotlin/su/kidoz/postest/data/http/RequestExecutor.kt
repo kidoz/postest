@@ -29,12 +29,16 @@ import kotlinx.serialization.json.put
 import su.kidoz.postest.domain.model.AuthConfig
 import su.kidoz.postest.domain.model.ClientCertConfig
 import su.kidoz.postest.domain.model.Environment
+import su.kidoz.postest.domain.model.ExecutionContext
 import su.kidoz.postest.domain.model.HttpMethod
 import su.kidoz.postest.domain.model.HttpRequest
 import su.kidoz.postest.domain.model.HttpResponse
 import su.kidoz.postest.domain.model.RequestBody
+import su.kidoz.postest.domain.model.RequestFailure
+import su.kidoz.postest.domain.model.RequestOutcome
 import su.kidoz.postest.domain.model.ResponseTime
 import su.kidoz.postest.domain.model.Variable
+import su.kidoz.postest.domain.port.RequestTransport
 import su.kidoz.postest.util.VariableResolver
 import java.net.URI
 import java.nio.file.Paths
@@ -54,8 +58,50 @@ private data class ResolutionContext(
 class RequestExecutor(
     private val client: HttpClient,
     private val variableResolver: VariableResolver = VariableResolver(),
-) {
+) : RequestTransport {
     private fun ResolutionContext.resolve(value: String): String = variableResolver.resolve(value, environment, collectionVariables)
+
+    override suspend fun executeRequest(
+        request: HttpRequest,
+        context: ExecutionContext,
+    ): RequestOutcome =
+        execute(request, context.environment, context.collectionVariables).fold(
+            onSuccess = { RequestOutcome.Success(it) },
+            onFailure = { error ->
+                if (error is CancellationException) throw error
+                val failure =
+                    when (error) {
+                        is SecurityException -> {
+                            RequestFailure.BLOCKED
+                        }
+
+                        is IllegalArgumentException -> {
+                            RequestFailure.INVALID_REQUEST
+                        }
+
+                        is java.net.UnknownHostException -> {
+                            RequestFailure.HOST_NOT_FOUND
+                        }
+
+                        is java.net.ConnectException -> {
+                            RequestFailure.CONNECTION_FAILED
+                        }
+
+                        is java.net.SocketTimeoutException, is io.ktor.client.plugins.HttpRequestTimeoutException -> {
+                            RequestFailure.TIMEOUT
+                        }
+
+                        is javax.net.ssl.SSLException -> {
+                            RequestFailure.TLS
+                        }
+
+                        else -> {
+                            RequestFailure.NETWORK
+                        }
+                    }
+                RequestOutcome.Failure(failure)
+            },
+        )
 
     suspend fun execute(
         request: HttpRequest,

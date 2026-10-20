@@ -29,6 +29,22 @@ class RequestExecutorTest {
         }
 
     @Test
+    fun `transport adapter maps engine failures to domain values without diagnostic content`() =
+        runTest {
+            val client = createMockClient { throw java.io.IOException("synthetic diagnostic content") }
+            try {
+                val outcome =
+                    RequestExecutor(client).executeRequest(
+                        HttpRequest(url = "https://example.test"),
+                        ExecutionContext(),
+                    )
+                assertEquals(RequestOutcome.Failure(RequestFailure.NETWORK), outcome)
+            } finally {
+                client.close()
+            }
+        }
+
+    @Test
     fun `execute GET request successfully`() =
         runTest {
             val mockClient =

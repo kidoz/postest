@@ -1,10 +1,10 @@
 package su.kidoz.postest.domain.usecase
 
-import su.kidoz.postest.data.repository.SessionRepository
 import su.kidoz.postest.domain.model.DraftSession
+import su.kidoz.postest.domain.port.DraftSessionStore
 
 class ManageSessionUseCase(
-    private val repository: SessionRepository,
+    private val repository: DraftSessionStore,
 ) {
     suspend fun load(): DraftSession? = repository.load()
 
