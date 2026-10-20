@@ -26,6 +26,9 @@ All notable changes to Postest are documented in this file. Releases are listed 
 - WebSocket request tabs with connect/disconnect, text message composer, and a timestamped live transcript.
 - WebSocket URL conversion from `http(s)://`, variable substitution, query parameters, headers, and Basic/Bearer/API-key authentication.
 - Automatic connection cleanup when disconnecting, closing a tab, switching back to HTTP, or closing the application.
+- WebSocket binary sending from a file, up to 10 MB per message.
+- Optional WebSocket auto-reconnect with exponential backoff (10 attempts, 1–30 seconds).
+- WebSocket transcripts restored after a restart, within a 1 MB / 200-message persistence budget.
 - OAuth 2.0 Authorization Code with PKCE, using the system browser and a temporary loopback redirect.
 - OAuth 2.0 Client Credentials and in-memory refresh-token handling.
 - OAuth 2.0 tokens stored with the request, with fixed error messages that omit endpoints and token values.
@@ -50,7 +53,7 @@ All notable changes to Postest are documented in this file. Releases are listed 
 ### Known Limitations
 
 - OAuth 2.0 Password and Implicit grants are not supported. Refresh tokens are cached in memory; providers that rotate refresh tokens may require reauthorization after a restart.
-- WebSocket binary sending, automatic reconnection, and transcript persistence are not supported.
+- Received WebSocket binary payloads are summarized as a size notice instead of being rendered.
 - Client certificates are not applied to WebSocket connections.
 - Certificate pinning is not yet supported.
 - Automatic key rotation is not implemented.

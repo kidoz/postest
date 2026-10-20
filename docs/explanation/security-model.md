@@ -16,7 +16,7 @@ This includes:
 - client-certificate paths and passphrases
 - environment variables, including values marked secret
 - request history with request and response bodies
-- the workspace session, including open requests and their last responses
+- the workspace session, including open requests, their last responses, and WebSocket message transcripts
 
 ### First-run storage choice
 

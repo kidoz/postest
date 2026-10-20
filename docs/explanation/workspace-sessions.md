@@ -49,7 +49,8 @@ If the user edits the workspace while the saved session is still loading, the re
 ## Trade-offs
 
 - Responses are stored with the session using the persisted-response size limit. The live response remains separate from the bounded recovery copy.
-- The session contains the same sensitive values as the request: auth credentials, client-certificate passphrases, and response bodies. The snapshot and its backup copy follow the workspace storage mode: encrypted or readable plaintext. See [Security model](security-model.md).
+- WebSocket transcripts are stored with the session, keeping the newest messages within a 1 MB / 200-message budget. Connection status, connection ids, and the auto-reconnect setting are not persisted.
+- The session contains the same sensitive values as the request: auth credentials, client-certificate passphrases, response bodies, and WebSocket messages. The snapshot and its backup copy follow the workspace storage mode: encrypted or readable plaintext. See [Security model](security-model.md).
 - The snapshot is local to the machine and is never uploaded.
 
 ## Related

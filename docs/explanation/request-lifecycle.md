@@ -50,7 +50,7 @@ The tab state change triggers the workspace autosave after a short debounce. Clo
 
 A request whose protocol is `WEBSOCKET` follows a different path. `WebSocketManager` resolves the URL, query parameters, headers, and header/query authentication, then opens a Ktor WebSocket session. Incoming frames are appended to the tab's in-memory transcript, and outgoing messages are sent through the same session.
 
-The connection is closed when the user disconnects, the tab is closed, the request is switched back to HTTP, or the application closes. WebSocket traffic creates no history entries, and transcripts are not written to the workspace snapshot.
+The connection is closed when the user disconnects, the tab is closed, the request is switched back to HTTP, or the application closes. WebSocket traffic creates no history entries. With auto-reconnect enabled, unexpected closes are retried with exponential backoff. Transcripts are written to the workspace snapshot within the 1 MB / 200-message persistence budget.
 
 ## Cancellation
 

@@ -11,7 +11,7 @@ This document outlines planned features and improvements for Postest.
 - [x] Collection management with folders
 - [x] Environment variables with secret masking in the UI (encrypted at rest in encrypted storage mode)
 - [x] OAuth 2.0 Authorization Code with PKCE and Client Credentials
-- [x] WebSocket connection testing (text messages)
+- [x] WebSocket connection testing (text and binary messages, auto-reconnect)
 - [x] Request history tracking
 - [x] Import: Postman Collection (v1, v2, v2.1), OpenAPI 3.x
 - [x] Export: Postman Collection v2.1

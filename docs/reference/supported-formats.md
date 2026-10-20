@@ -7,10 +7,11 @@
 ## WebSocket connections
 
 - URLs: `ws://` and `wss://`; `http://` and `https://` URLs are converted automatically.
-- Text frames can be sent and received; binary frames are shown as a size notice.
-- Query parameters, headers, Basic/Bearer/API-key authentication, and `{{variable}}` substitution are supported.
+- Text frames can be sent and received; binary files up to 10 MB can be sent, and received binary frames are shown as a size notice.
+- Optional auto-reconnect retries at most 10 times with 1–30 second backoff.
+- Query parameters, headers, Basic/Bearer/API-key/OAuth 2.0 authentication, and `{{variable}}` substitution are supported.
 - Client certificates are not applied to WebSocket connections.
-- The live transcript keeps the last 500 messages and is not persisted.
+- The transcript keeps the last 500 messages in memory and restores the newest messages within a 1 MB / 200-message budget.
 
 ## Request body types
 
