@@ -81,11 +81,9 @@ class EnvironmentRepository(
     override suspend fun updateEnvironment(environment: Environment) {
         withContext(Dispatchers.IO) {
             database.transaction {
-                if (environment.isActive) queries.deactivateAllEnvironments()
                 queries.updateEnvironment(
                     id = environment.id,
                     name = cipher.encrypt("Environment", environment.id, "name", environment.name),
-                    is_active = if (environment.isActive) 1 else 0,
                     updated_at = System.currentTimeMillis(),
                 )
                 queries.deleteVariablesByEnvironmentId(environment.id)

@@ -94,6 +94,33 @@ class EnvironmentRepositoryTest {
         }
 
     @Test
+    fun `saving an inactive draft preserves subsequent activation`() =
+        runTest {
+            val draft = repository.createEnvironment("Development")
+            repository.setActiveEnvironment(draft.id)
+
+            repository.updateEnvironment(draft.copy(name = "Renamed"))
+
+            assertEquals(draft.id, repository.getActiveEnvironment()?.id)
+            assertEquals("Renamed", repository.getActiveEnvironment()?.name)
+        }
+
+    @Test
+    fun `saving an old active draft does not replace the current selection`() =
+        runTest {
+            val first = repository.createEnvironment("First")
+            val second = repository.createEnvironment("Second")
+            repository.setActiveEnvironment(first.id)
+            val draft = repository.getActiveEnvironment()!!
+            repository.setActiveEnvironment(second.id)
+
+            repository.updateEnvironment(draft.copy(name = "Edited"))
+
+            assertEquals(second.id, repository.getActiveEnvironment()?.id)
+            assertEquals("Edited", repository.loadEnvironments().first { it.id == first.id }.name)
+        }
+
+    @Test
     fun `deleteEnvironment should remove environment`() =
         runTest {
             val created = repository.createEnvironment("ToDelete")

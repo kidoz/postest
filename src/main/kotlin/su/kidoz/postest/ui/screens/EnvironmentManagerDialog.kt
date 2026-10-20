@@ -51,7 +51,8 @@ fun EnvironmentManagerDialog(
     onDelete: (String) -> Unit,
     onSetActive: (String) -> Unit,
 ) {
-    var selectedEnvironment by remember { mutableStateOf<Environment?>(null) }
+    var selectedEnvironmentId by remember { mutableStateOf<String?>(null) }
+    val selectedEnvironment = environments.find { it.id == selectedEnvironmentId }
     var isEditing by remember { mutableStateOf(false) }
     var isCreating by remember { mutableStateOf(false) }
     var editingEnvironment by remember { mutableStateOf<Environment?>(null) }
@@ -78,7 +79,7 @@ fun EnvironmentManagerDialog(
                         environments = environments,
                         activeEnvironmentId = activeEnvironmentId,
                         selectedId = selectedEnvironment?.id,
-                        onSelect = { selectedEnvironment = it },
+                        onSelect = { selectedEnvironmentId = it.id },
                         onEdit = { startEditing(it) },
                         onDelete = { onDelete(it.id) },
                         onAdd = { startEditing(null) },
@@ -98,7 +99,7 @@ fun EnvironmentManagerDialog(
                             onSave(env)
                             isEditing = false
                             editingEnvironment = null
-                            selectedEnvironment = env
+                            selectedEnvironmentId = env.id
                         },
                         onCancel = {
                             isEditing = false

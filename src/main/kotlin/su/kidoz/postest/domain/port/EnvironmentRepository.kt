@@ -14,6 +14,7 @@ interface EnvironmentRepository {
 
     suspend fun saveEnvironment(environment: Environment)
 
+    /** Updates editable content while preserving activation; use setActiveEnvironment to change selection. */
     suspend fun updateEnvironment(environment: Environment)
 
     suspend fun deleteEnvironment(environmentId: String)
