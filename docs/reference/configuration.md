@@ -8,7 +8,7 @@ Everything lives under the user's home directory:
 
 | Path | Contents |
 |------|----------|
-| `~/.postest/postest.db` | SQLite database: collections, environments, history, workspace session |
+| `~/.postest/postest-protected.db` | SQLite database: collections, environments, history, workspace session |
 | `~/.postest/logs/postest.log` | application log |
 | `~/.postest/logs/postest-error.log` | error-only log |
 
@@ -17,7 +17,7 @@ Log rotation:
 - `postest.log` keeps 7 days, up to 50 MB.
 - `postest-error.log` keeps 30 days, up to 100 MB.
 
-The database is a normal SQLite file. Back it up while the app is closed.
+The database is SQLite with encrypted user-content columns. Back it up while the app is closed and keep its recovery key separately. The OS credential store holds the encryption key; see [Security model](../explanation/security-model.md).
 
 ## HTTP timeouts
 

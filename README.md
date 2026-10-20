@@ -166,7 +166,7 @@ Application data is stored in `~/.postest/`:
 
 ```
 ~/.postest/
-├── postest.db       # SQLite database
+├── postest-protected.db  # SQLite with encrypted user content
 └── logs/
     ├── postest.log  # Application logs
     └── error.log    # Error logs only

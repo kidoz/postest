@@ -26,10 +26,18 @@ Changes are saved automatically about 300 ms after the tab state changes. Closin
 The workspace is stored in the same SQLite database as collections, environments, and history:
 
 ```
-~/.postest/postest.db
+~/.postest/postest-protected.db
 ```
 
 The `WorkspaceSession` table keeps one `current` snapshot. A `backup` copy is made when a saved snapshot cannot be read.
+
+## Unlocking and recovering protected storage
+
+On first startup, save the recovery key in a password manager. You can display it again with **Storage → Show Recovery Key**.
+
+If the OS credential store is locked, unlock it and choose **Retry unlocking**. If its key entry is missing or incorrect, enter your saved recovery key and choose **Recover storage**. Postest verifies the database before storing the recovered key. It does not start a new workspace or autosave while storage is inaccessible.
+
+To recover on another computer, close Postest, place the backed-up database at the path above, then start it and enter the recovery key. Both the database file and the key are required. Do not replace a newer database without preserving a closed-app copy first.
 
 ## If your drafts are not restored
 
@@ -45,13 +53,13 @@ Check the application log for details:
 
 There is no separate reset command. Close the tabs you no longer need; the next save records only the remaining tabs.
 
-To delete all application data, including collections, environments, history, and the saved workspace, close Postest and remove:
+To delete collections, environments, history, and the saved workspace, close Postest and remove:
 
 ```
-~/.postest/postest.db
+~/.postest/postest-protected.db
 ```
 
-**Warning:** this cannot be undone. Back up the file first if you may need the data.
+**Warning:** this cannot be undone. Back up the file and save the recovery key first if you may need the data. The OS credential entry remains until removed through the operating system; a new database uses a new key and vault identifier.
 
 ## Related
 
