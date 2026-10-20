@@ -26,7 +26,7 @@ Changes are saved automatically about 300 ms after the tab state changes. Closin
 The workspace is stored in the same SQLite database as collections, environments, and history:
 
 ```
-~/.postest/postest-protected.db
+~/.postest/posttest.db
 ```
 
 The `WorkspaceSession` table keeps one `current` snapshot. A `backup` copy is made when a saved snapshot cannot be read.
@@ -56,8 +56,10 @@ There is no separate reset command. Close the tabs you no longer need; the next 
 To delete collections, environments, history, and the saved workspace, close Postest and remove:
 
 ```
-~/.postest/postest-protected.db
+~/.postest/posttest.db
 ```
+
+Previous-version backups use `posttest.db.bak`, `posttest.db.bak.1`, and so on. Those files also contain saved data; remove them too if you intend to delete all saved copies.
 
 **Warning:** this cannot be undone. Back up the file and save the recovery key first if you may need the data. The OS credential entry remains until removed through the operating system; a new database uses a new key and vault identifier.
 

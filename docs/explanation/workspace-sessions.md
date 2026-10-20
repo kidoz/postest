@@ -31,7 +31,7 @@ Closing waits for restoration, freezes workspace edits, cancels and joins reques
 
 ## Where it is stored
 
-The snapshot is encrypted JSON in the `WorkspaceSession` table of `~/.postest/postest-protected.db`:
+The snapshot is encrypted JSON in the `WorkspaceSession` table of `~/.postest/posttest.db`:
 
 | Row | Purpose |
 |-----|---------|

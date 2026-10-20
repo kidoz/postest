@@ -8,7 +8,8 @@ Everything lives under the user's home directory:
 
 | Path | Contents |
 |------|----------|
-| `~/.postest/postest-protected.db` | SQLite database: collections, environments, history, workspace session |
+| `~/.postest/posttest.db` | Active SQLite database: collections, environments, history, workspace session |
+| `~/.postest/posttest.db.bak` / `.bak.N` | Encrypted snapshots made during database upgrades |
 | `~/.postest/logs/postest.log` | application log |
 | `~/.postest/logs/postest-error.log` | error-only log |
 

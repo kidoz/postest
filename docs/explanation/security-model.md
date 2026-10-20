@@ -7,7 +7,7 @@ Postest is a local desktop client. It does not sync collections, send telemetry,
 All application data is stored in:
 
 ```
-~/.postest/postest-protected.db
+~/.postest/posttest.db
 ```
 
 This includes:
@@ -26,9 +26,11 @@ Repositories and autosave start only after the database key and all encrypted co
 
 On first use, save the random recovery key in a password manager. **Storage → Show Recovery Key** displays it again. This is the database encryption key encoded for recovery, not a password. Anyone with it and the database can decrypt the content. Postest does not save this recovery text in a file or log. Losing both the OS credential entry and the recovery key makes the data inaccessible.
 
-Close Postest before copying the database for backup. To move to another machine, restore it as `~/.postest/postest-protected.db`, start Postest, and enter the saved recovery key. Recovery authenticates the entire database before replacing the OS credential entry. A working OS credential store is still required.
+Close Postest before copying the database for backup. To move to another machine, restore it as `~/.postest/posttest.db`, start Postest, and enter the saved recovery key. Recovery authenticates the entire database before replacing the OS credential entry. A working OS credential store is still required.
 
 ### Existing installations
+
+The active file is `posttest.db`; migration uses `posttest.db.pending`. Previous-version snapshots are saved as `posttest.db.bak`, then `.bak.1`, `.bak.2`, and so on without overwriting existing backups. These snapshots contain encrypted payloads, including when migrating from plaintext. Earlier encrypted installations using `postest-protected.db` (or a completed `postest-protected.pending.db`) are adopted automatically with the same vault and encryption key. Keep backup files and the recovery key separately.
 
 Before upgrading, close all older Postest instances and database tools. On first startup, Postest copies `postest.db` into a fresh encrypted staging database. It checks authentication, row counts, SQLite integrity, and foreign-key relationships before an atomic handover. Unknown schemas block migration. Complete staging files can be recovered after an interruption; incomplete staging files are rebuilt from the retained source. Repositories never write live data to a staging file.
 
