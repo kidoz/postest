@@ -44,7 +44,7 @@ POSTEST_HTTP_LOGGING=true ./gradlew run
 
 The application also reads the `postest.httpLogging` system property when its JVM is started with `-Dpostest.httpLogging=true` (for example, from a custom launcher).
 
-When enabled, Ktor logs request and response **headers only**. `Authorization`, `Cookie`, and headers containing `token` or `secret` are sanitized. Bodies are not logged.
+When enabled, Ktor logs request and response **headers only**. `Authorization`, `Proxy-Authorization`, `Cookie`, and headers containing `token`, `secret`, `api-key`, or `auth` are sanitized. Bodies are not logged.
 
 ## Network access
 
@@ -56,6 +56,8 @@ When enabled, Ktor logs request and response **headers only**. `Authorization`, 
 - No proxy, custom CA, redirect toggle, or request-timeout setting in the UI.
 - No certificate pinning.
 - No OAuth 2.0 or WebSocket support.
+- Live response bodies are capped at 10 MB; larger responses complete as truncated as soon as the limit is reached.
+- History entries and workspace snapshots keep at most 1 MB of each response body.
 - The theme choice is not persisted between runs.
 
 ## Related

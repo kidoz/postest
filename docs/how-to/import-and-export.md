@@ -27,13 +27,15 @@ The result is a Postman Collection **v2.1** JSON file. If you omit the `.json` e
 
 A suggested filename based on the collection name is filled in for you.
 
+Query parameters typed directly into a request URL are exported alongside the parameters in the query editor, so both sets round-trip through import and export. Duplicate keys are preserved, values are decoded once, and URL fragments are not exported.
+
 ## Troubleshooting
 
-- **The import fails** - confirm the file is valid JSON/YAML and is a Postman v1/v2 collection or an OpenAPI 3.x document. Unsupported or malformed input is reported as an error.
+- **The import fails** - confirm the file is valid JSON/YAML and is a Postman v1/v2 collection or an OpenAPI 3.x document. Unsupported or malformed input is reported as an error. The message deliberately omits the file content and parser details so credentials in a malformed file are not exposed.
 - **Requests are missing after import** - check whether they were nested in folders; expand the imported collection.
 - **Export cannot write the file** - choose a directory you can write to. The export path is created from the selected file, and Postest reports an error if writing fails.
 
-Logs are written to `~/.postest/logs/postest.log` if you need details. See [Configuration, files, and limits](../reference/configuration.md).
+Logs are written to `~/.postest/logs/postest.log` if you need details; failed imports record only a fixed message, never the parsed content. See [Configuration, files, and limits](../reference/configuration.md).
 
 ## Related
 

@@ -53,7 +53,7 @@ Files with `.json`, `.yaml`, or `.yml` extensions are accepted. The format is de
 - Status code, response time, and size
 - Timing breakdown: DNS, connect, TLS handshake, first byte, download
 
-Large response bodies show the first 200 KB by default, with an option to load the full content.
+Large response bodies show the first 200 KB by default, with an option to load the full content. Response bodies are capped at 10 MB before display; larger responses are marked as truncated.
 
 ## Related
 

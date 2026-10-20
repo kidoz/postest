@@ -53,11 +53,13 @@ Dynamic variables are also supported, for example `{{$uuid}}`, `{{$timestamp}}`,
 2. Select the environment.
 3. Change its name or variables and save, or use the delete action.
 
+Saving edits preserves the current active selection, even when you edit an environment that is not active or an older draft of the active one. Use the environment selector or **Set Active** to change which environment is used for requests.
+
 Deleting the active environment clears the active selection.
 
 ## Secrets
 
-Secret variables are masked in the environment editor. Their values are stored in the local SQLite database without encryption, like other variable values. See the [security model](../explanation/security-model.md).
+Secret variables are masked in the environment editor. Their values, like all other stored request and environment data, are encrypted at rest. See the [security model](../explanation/security-model.md).
 
 ## Related
 

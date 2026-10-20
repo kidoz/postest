@@ -64,8 +64,9 @@ Before release, verify actual credential-store read/write and restart behavior o
 
 - Application logs are written to `~/.postest/logs/`.
 - Request bodies and response bodies are not logged.
-- Optional HTTP header logging is off by default. When enabled, `Authorization`, `Cookie`, and headers containing `token` or `secret` are sanitized. See [Configuration](../reference/configuration.md).
-- Error messages can include the request URL (for example, an invalid-URL error), so avoid putting secrets directly in URLs when sharing logs.
+- Optional HTTP header logging is off by default. When enabled, `Authorization`, `Proxy-Authorization`, `Cookie`, and headers containing `token`, `secret`, `api-key`, or `auth` are sanitized. See [Configuration](../reference/configuration.md).
+- Execution errors use fixed messages. They omit resolved URLs, hostnames, file paths, and exception text; logs record only the exception type and the request host.
+- Import errors and logs omit file content and parser exception chains, so a malformed collection or specification is not echoed into logs or error toasts.
 
 ## Network access
 

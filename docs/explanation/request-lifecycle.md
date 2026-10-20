@@ -38,7 +38,7 @@ Timeouts are 60 seconds for the request, 30 seconds to connect, and 60 seconds f
 
 ## 4. Response handling
 
-The response is converted to `HttpResponse` with status, headers, body, content type, size, and timing breakdown. Failures are returned as a failed `Result` with the error message.
+The response is streamed into memory with a hard 10 MB limit. If the stream exceeds the limit, it is closed immediately, the body is truncated, and the response is marked as truncated instead of waiting for the server to finish. The result is converted to `HttpResponse` with status, headers, body, content type, size, and timing breakdown. Failures are returned as a failed `Result` with a fixed error message that omits URLs, hostnames, file paths, and exception details.
 
 `RequestExecutionManager` stores either the response or the error in the tab, clears the loading flag, and adds a history entry containing the request, response/error, duration, and timestamp. History is pruned to the newest 200 entries.
 
