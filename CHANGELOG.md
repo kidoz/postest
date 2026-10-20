@@ -33,6 +33,8 @@ All notable changes to Postest are documented in this file. Releases are listed 
 - OAuth 2.0 Client Credentials and in-memory refresh-token handling.
 - OAuth 2.0 tokens stored with the request, with fixed error messages that omit endpoints and token values.
 - Postman OAuth 2.0 auth import and export.
+- SHA-256 certificate and public-key pinning for HTTP and WebSocket requests, with Base64, hex, and `sha256/` pin formats.
+- Certificate pins support variable substitution and run in addition to normal TLS chain validation.
 
 ### Changed
 
@@ -55,7 +57,7 @@ All notable changes to Postest are documented in this file. Releases are listed 
 - OAuth 2.0 Password and Implicit grants are not supported. Refresh tokens are cached in memory; providers that rotate refresh tokens may require reauthorization after a restart.
 - Received WebSocket binary payloads are summarized as a size notice instead of being rendered.
 - Client certificates are not applied to WebSocket connections.
-- Certificate pinning is not yet supported.
+- Certificate pinning supports one leaf pin per request; backup pins and custom CA settings are not supported.
 - Automatic key rotation is not implemented.
 
 ## [1.1.0] - 2026-10-20

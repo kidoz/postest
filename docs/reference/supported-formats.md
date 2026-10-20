@@ -39,6 +39,13 @@ The form-data editor lets you mark a field as a file and choose a path, but the 
 - API key (header or query parameter)
 - OAuth 2.0 Authorization Code with PKCE (system browser + loopback redirect)
 - OAuth 2.0 Client Credentials
+
+## Certificate pinning
+
+- Pin the leaf certificate (DER) or public key (SubjectPublicKeyInfo) with a SHA-256 hash.
+- Accepts Base64, hex, or `sha256/...` values and one pin per request.
+- Applies to HTTP and WebSocket requests; normal TLS chain validation always runs first.
+- Custom CA certificates and certificate-pinning bypass are not supported.
 - Client certificate (mTLS), in addition to the schemes above:
   - PEM certificate plus private key
   - PKCS#12 (`.p12`, `.pfx`) with optional passphrase

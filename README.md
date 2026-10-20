@@ -25,6 +25,7 @@ A modern, lightweight REST API client built with Kotlin and Compose Multiplatfor
 - **Request Builder** - Headers, query parameters, and body editor
 - **Body Types** - JSON, GraphQL, form data, multipart, raw text, binary
 - **Authentication** - Basic Auth, Bearer Token, API Key, OAuth 2.0 (Authorization Code with PKCE, Client Credentials), Client Certificate (mTLS)
+- **Certificate Pinning** - Pin a server's leaf certificate or public key by SHA-256 for HTTP and WebSocket requests
 - **Collections** - Organize requests into collections and nested folders, with drag-and-drop moves between folders
 - **Environments** - Manage variables across different environments
 - **Variable Substitution** - Use `{{variable}}` syntax in URLs, headers, and body

@@ -6,7 +6,7 @@ Postest can open WebSocket connections from a request tab and show the live mess
 
 1. In a request tab, open the method selector and choose **WebSocket**.
 2. Enter a `ws://` or `wss://` URL. An `http://` or `https://` URL is converted to `ws://` or `wss://`.
-3. Optionally configure **Params**, **Headers**, and **Auth**. Variables such as `{{baseUrl}}` and `{{token}}` are resolved when you connect.
+3. Optionally configure **Params**, **Headers**, and **Auth**. Variables such as `{{baseUrl}}` and `{{token}}` are resolved when you connect. Certificate pinning configured on the **Auth** tab also applies to the WebSocket handshake.
 4. Choose **Connect** (or press `Cmd/Ctrl + Enter` while the URL field is focused).
 
 The button shows **Connecting** until the handshake completes, then changes to **Disconnect**.

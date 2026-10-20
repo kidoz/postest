@@ -56,8 +56,8 @@ When enabled, Ktor logs request and response **headers only**. `Authorization`, 
 ## Limits and unsupported settings
 
 - No proxy, custom CA, redirect toggle, or request-timeout setting in the UI.
-- No certificate pinning.
-- No OAuth 2.0 support.
+- Certificate pinning supports one leaf certificate or public-key SHA-256 pin per request; there are no backup pins or custom CA settings.
+- No OAuth 2.0 password or implicit grants.
 - Live response bodies are capped at 10 MB; larger responses complete as truncated as soon as the limit is reached.
 - History entries and workspace snapshots keep at most 1 MB of each response body.
 - WebSocket transcripts keep the last 500 messages in memory and persist the newest messages within a 1 MB / 200-message budget. Each message is truncated at 1 MB, and frames are limited to 10 MB.

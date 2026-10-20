@@ -54,6 +54,29 @@ The client-certificate section is separate from the authentication type. It can 
 
 Paths and passphrases support environment variables, so you can keep them in an environment.
 
+## Certificate pinning
+
+Pin the server's leaf certificate or public key for HTTP and WebSocket requests:
+
+1. Open the **Auth** tab and enable **Certificate Pinning**.
+2. Choose **Certificate** (SHA-256 of the DER-encoded leaf certificate) or **Public Key** (SHA-256 of the SubjectPublicKeyInfo).
+3. Enter the pin as Base64, hex, or `sha256/...` text. `{{variables}}` are supported.
+
+Normal TLS chain validation always runs first; the pin is an additional check. Only one leaf pin is supported per request, with no backup pins. Removing the pin disables the check.
+
+Ways to compute a pin with OpenSSL:
+
+```bash
+# Leaf certificate
+openssl s_client -connect api.example.com:443 -servername api.example.com </dev/null \
+  | openssl x509 -outform der | openssl dgst -sha256 -binary | openssl base64
+
+# Public key (SubjectPublicKeyInfo)
+openssl s_client -connect api.example.com:443 -servername api.example.com </dev/null \
+  | openssl x509 -pubkey -noout | openssl pkey -pubin -outform der \
+  | openssl dgst -sha256 -binary | openssl base64
+```
+
 ## Use variables
 
 All authentication fields support `{{variable}}` substitution from the active environment. This is useful for tokens and usernames that change per environment.
@@ -63,10 +86,11 @@ All authentication fields support `{{variable}}` substitution from the active en
 - **401 Unauthorized** - check the scheme and the value. Bearer tokens should not include the `Bearer` prefix in the token field.
 - **403 Forbidden** - the credentials are valid but the server denies access.
 - **Certificate errors** - confirm the certificate and key match, the key is readable, and the passphrase is correct. PKCS#12 files must contain a key entry.
+- **TLS error with a pin set** - the leaf certificate or key no longer matches the pin. Confirm the server rotates certificates or update the pin; normal trust validation must also pass.
 - **Variables are sent literally** - confirm the environment is active and the variable is enabled.
 
 ## Security
 
-Credentials, OAuth tokens, and certificate passphrases are stored in the request data in the local database. Encrypted storage protects them at rest; unencrypted storage leaves them readable. They are not sent anywhere except to the target server and, for OAuth, the configured token endpoint. Optional HTTP header logging sanitizes `Authorization`, `Cookie`, and headers containing `token` or `secret`. Authorization codes, tokens, and client secrets are never logged.
+Credentials, OAuth tokens, certificate passphrases, and certificate pins are stored in the request data in the local database. Encrypted storage protects them at rest; unencrypted storage leaves them readable. They are not sent anywhere except to the target server and, for OAuth, the configured token endpoint. Optional HTTP header logging sanitizes `Authorization`, `Cookie`, and headers containing `token` or `secret`. Authorization codes, tokens, and client secrets are never logged.
 
 See [Security model](../explanation/security-model.md) and [Variables](../reference/variables.md).

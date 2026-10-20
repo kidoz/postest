@@ -73,7 +73,7 @@ Before release, verify actual credential-store read/write and restart behavior o
 - HTTPS uses the platform's default certificate validation.
 - Client certificates (PEM or PKCS#12) are supported for mTLS on HTTP requests.
 - WebSocket connections use the same direct connection and platform TLS validation for `wss://`; client certificates are not applied to them.
-- Certificate pinning and a custom CA setting are not available.
+- Certificate pinning can pin the leaf certificate or public key by SHA-256 for HTTP and WebSocket requests. It is additive: normal chain validation still runs first. Custom CA settings, backup pins, and pinning as a trust bypass are not available.
 - There is no proxy configuration.
 
 ## Logging
