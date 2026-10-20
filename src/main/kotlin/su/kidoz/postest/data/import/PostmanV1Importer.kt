@@ -35,8 +35,8 @@ class PostmanV1Importer {
             logger.info { "Successfully imported v1.0.0 collection '${collection.name}' with ${countRequests(collection.items)} requests" }
             Result.success(collection)
         } catch (e: Exception) {
-            logger.error(e) { "Failed to import Postman v1.0.0 collection: ${e.message}" }
-            Result.failure(ImportException("Failed to parse Postman v1.0.0 collection: ${e.message}", e))
+            logger.error { "Failed to import Postman v1.0.0 collection" }
+            Result.failure(ImportException("Failed to parse Postman v1.0.0 collection"))
         }
 
     private fun convertCollection(postman: PostmanV1Collection): RequestCollection {

@@ -85,8 +85,8 @@ class PostmanImporter {
             logger.info { "Successfully imported v2.x collection '${collection.name}' with ${countRequests(collection.items)} requests" }
             Result.success(collection)
         } catch (e: Exception) {
-            logger.error(e) { "Failed to import Postman v2.x collection: ${e.message}" }
-            Result.failure(ImportException("Failed to parse Postman v2.x collection: ${e.message}", e))
+            logger.error { "Failed to import Postman v2.x collection" }
+            Result.failure(ImportException("Failed to parse Postman v2.x collection"))
         }
 
     private fun convertV2Collection(postman: PostmanCollection): RequestCollection =
@@ -351,7 +351,7 @@ class PostmanImporter {
             try {
                 JsonFormatter.format(content)
             } catch (e: Exception) {
-                logger.debug(e) { "Failed to format JSON on import, keeping original" }
+                logger.debug { "Failed to format JSON on import, keeping original" }
                 content
             }
         }

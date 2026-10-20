@@ -100,8 +100,8 @@ class OpenAPIImporter {
             logger.info { "Successfully imported OpenAPI spec '${collection.name}' with ${countRequests(collection.items)} requests" }
             Result.success(collection)
         } catch (e: Exception) {
-            logger.error(e) { "Failed to import OpenAPI specification: ${e.message}" }
-            Result.failure(ImportException("Failed to parse OpenAPI specification: ${e.message}", e))
+            logger.error { "Failed to import OpenAPI specification" }
+            Result.failure(ImportException("Failed to parse OpenAPI specification"))
         }
     }
 
@@ -320,7 +320,7 @@ class OpenAPIImporter {
             val jsonElement = yamlNodeToJsonElement(loaded)
             json.encodeToString(JsonElement.serializer(), jsonElement)
         }.onFailure {
-            logger.warn(it) { "Failed to parse YAML OpenAPI content" }
+            logger.warn { "Failed to parse YAML OpenAPI content" }
         }.getOrNull()
 
     private fun yamlNodeToJsonElement(node: Any?): JsonElement =
@@ -698,7 +698,7 @@ class OpenAPIImporter {
             try {
                 JsonFormatter.format(content)
             } catch (e: Exception) {
-                logger.debug(e) { "Failed to format JSON on import, keeping original" }
+                logger.debug { "Failed to format JSON on import, keeping original" }
                 content
             }
         }
