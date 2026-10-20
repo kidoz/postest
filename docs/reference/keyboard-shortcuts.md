@@ -4,14 +4,15 @@ On macOS use **Cmd**; on Linux and Windows use **Ctrl**.
 
 | Shortcut | Action |
 |----------|--------|
-| `Cmd/Ctrl + Enter` | Send the active request |
+| `Cmd/Ctrl + Enter` | Send the active HTTP request, or connect/disconnect the active WebSocket |
+| `Cmd/Ctrl + Enter` (composer) | Send the WebSocket message |
 | `Cmd/Ctrl + T` | Open a new tab |
 | `Cmd/Ctrl + N` | Open a new tab (same action as `Cmd/Ctrl + T`) |
 | `Cmd/Ctrl + W` | Close the active tab |
 
 If a tab has unsaved edits, closing it asks for confirmation. Tabs without changes close immediately.
 
-`Cmd/Ctrl + Enter` also works while the URL field is focused.
+`Cmd/Ctrl + Enter` also works while the URL field is focused. In a WebSocket tab, the same shortcut connects when disconnected and disconnects when connected; the message composer sends the typed message.
 
 ## Split panes
 

@@ -46,6 +46,12 @@ The response is streamed into memory with a hard 10 MB limit. If the stream exce
 
 The tab state change triggers the workspace autosave after a short debounce. Closing the app flushes the pending save.
 
+## WebSocket requests
+
+A request whose protocol is `WEBSOCKET` follows a different path. `WebSocketManager` resolves the URL, query parameters, headers, and header/query authentication, then opens a Ktor WebSocket session. Incoming frames are appended to the tab's in-memory transcript, and outgoing messages are sent through the same session.
+
+The connection is closed when the user disconnects, the tab is closed, the request is switched back to HTTP, or the application closes. WebSocket traffic creates no history entries, and transcripts are not written to the workspace snapshot.
+
 ## Cancellation
 
 Cancelling a request cancels its coroutine job. The tab stops loading and no history entry is added. The active request job for a tab is also cancelled when a new request is sent from that tab.

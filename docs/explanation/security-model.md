@@ -56,14 +56,15 @@ Before release, verify actual credential-store read/write and restart behavior o
 
 - Requests go directly to the target server.
 - HTTPS uses the platform's default certificate validation.
-- Client certificates (PEM or PKCS#12) are supported for mTLS.
+- Client certificates (PEM or PKCS#12) are supported for mTLS on HTTP requests.
+- WebSocket connections use the same direct connection and platform TLS validation for `wss://`; client certificates are not applied to them.
 - Certificate pinning and a custom CA setting are not available.
 - There is no proxy configuration.
 
 ## Logging
 
 - Application logs are written to `~/.postest/logs/`.
-- Request bodies and response bodies are not logged.
+- Request bodies, response bodies, and WebSocket message contents are not logged.
 - Optional HTTP header logging is off by default. When enabled, `Authorization`, `Proxy-Authorization`, `Cookie`, and headers containing `token`, `secret`, `api-key`, or `auth` are sanitized. See [Configuration](../reference/configuration.md).
 - Execution errors use fixed messages. They omit resolved URLs, hostnames, file paths, and exception text; logs record only the exception type and the request host.
 - Import errors and logs omit file content and parser exception chains, so a malformed collection or specification is not echoed into logs or error toasts.

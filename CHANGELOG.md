@@ -10,6 +10,7 @@ All notable changes to Postest are documented in this file. Releases are listed 
 
 - **Encrypted Storage** - User content is encrypted at rest with AES-256-GCM; the key lives in the OS credential store, and startup requires unlocking it.
 - **Safer Upgrades** - Existing databases move through a verified staging file, with encrypted `.bak` snapshots retained for rollback.
+- **WebSockets** - Open `ws://` and `wss://` connections, send and receive text messages, and inspect the live transcript.
 - **Import and Export Fidelity** - URL-embedded query parameters now survive a Postman round trip.
 
 ### Added
@@ -21,6 +22,9 @@ All notable changes to Postest are documented in this file. Releases are listed 
 - Exclusive storage lock that prevents two instances from writing the same database.
 - Verified migration of the existing plaintext database into encrypted storage, with `.bak` snapshots.
 - Automatic adoption of earlier `postest-protected.db` installations.
+- WebSocket request tabs with connect/disconnect, text message composer, and a timestamped live transcript.
+- WebSocket URL conversion from `http(s)://`, variable substitution, query parameters, headers, and Basic/Bearer/API-key authentication.
+- Automatic connection cleanup when disconnecting, closing a tab, switching back to HTTP, or closing the application.
 
 ### Changed
 
@@ -41,7 +45,8 @@ All notable changes to Postest are documented in this file. Releases are listed 
 ### Known Limitations
 
 - OAuth 2.0 authentication is not yet supported.
-- WebSocket connections are not yet supported.
+- WebSocket binary sending, automatic reconnection, and transcript persistence are not supported.
+- Client certificates are not applied to WebSocket connections.
 - Certificate pinning is not yet supported.
 - Automatic key rotation is not implemented.
 

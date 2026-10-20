@@ -23,6 +23,7 @@ Learning-oriented, step-by-step lessons:
 Task-oriented recipes:
 
 - [Import and export collections](how-to/import-and-export.md)
+- [Use WebSocket connections](how-to/use-websockets.md)
 - [Manage environments and variables](how-to/manage-environments.md)
 - [Authenticate requests](how-to/authenticate-requests.md)
 - [Organize collections and move items](how-to/organize-collections.md)

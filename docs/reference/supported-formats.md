@@ -4,6 +4,14 @@
 
 `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, `OPTIONS`
 
+## WebSocket connections
+
+- URLs: `ws://` and `wss://`; `http://` and `https://` URLs are converted automatically.
+- Text frames can be sent and received; binary frames are shown as a size notice.
+- Query parameters, headers, Basic/Bearer/API-key authentication, and `{{variable}}` substitution are supported.
+- Client certificates are not applied to WebSocket connections.
+- The live transcript keeps the last 500 messages and is not persisted.
+
 ## Request body types
 
 The body editor exposes:
@@ -41,9 +49,13 @@ The form-data editor lets you mark a field as a file and choose a path, but the 
 
 Files with `.json`, `.yaml`, or `.yml` extensions are accepted. The format is detected automatically.
 
+Neither import format represents WebSocket connections, so imported requests are always HTTP.
+
 ## Export
 
 - Postman Collection v2.1 (`.json`)
+
+Postman Collections have no WebSocket protocol field. A WebSocket request is exported with its URL, headers, and parameters as an HTTP request, and the protocol is not preserved.
 
 ## Response display
 

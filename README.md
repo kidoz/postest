@@ -21,6 +21,7 @@ A modern, lightweight REST API client built with Kotlin and Compose Multiplatfor
 ## Features
 
 - **HTTP Methods** - Support for GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS
+- **WebSockets** - Connect to `ws://` and `wss://` endpoints, send and receive messages, and inspect the live transcript
 - **Request Builder** - Headers, query parameters, and body editor
 - **Body Types** - JSON, GraphQL, form data, multipart, raw text, binary
 - **Authentication** - Basic Auth, Bearer Token, API Key, Client Certificate (mTLS)
