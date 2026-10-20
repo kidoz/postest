@@ -4,7 +4,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.serialization.json.Json
 import su.kidoz.postest.domain.model.*
 import su.kidoz.postest.util.JsonFormatter
-import java.net.URLDecoder
+import su.kidoz.postest.util.parseUrlQuery
 import java.util.UUID
 
 private val logger = KotlinLogging.logger {}
@@ -184,26 +184,8 @@ class PostmanImporter {
                 )
             }
         }
-        return parseQueryString(rawUrl)
+        return parseUrlQuery(rawUrl)
     }
-
-    private fun parseQueryString(rawUrl: String): List<KeyValue> {
-        val queryStart = rawUrl.indexOf('?')
-        if (queryStart < 0) return emptyList()
-        val fragmentStart = rawUrl.indexOf('#', queryStart)
-        val query = rawUrl.substring(queryStart + 1, if (fragmentStart >= 0) fragmentStart else rawUrl.length)
-        return query
-            .split("&")
-            .filter { it.isNotBlank() }
-            .map { pair ->
-                KeyValue(
-                    key = decodeQueryComponent(pair.substringBefore('=')),
-                    value = decodeQueryComponent(pair.substringAfter('=', "")),
-                )
-            }
-    }
-
-    private fun decodeQueryComponent(value: String): String = runCatching { URLDecoder.decode(value, Charsets.UTF_8) }.getOrDefault(value)
 
     private fun cleanUrl(url: String): String {
         // Query parameters are stored separately; fragments are not sent to the server.

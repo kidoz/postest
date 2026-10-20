@@ -4,6 +4,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import su.kidoz.postest.data.import.PostmanImporter
 import su.kidoz.postest.domain.model.AuthConfig
 import su.kidoz.postest.domain.model.CollectionItem
 import su.kidoz.postest.domain.model.FormField
@@ -182,6 +183,44 @@ class PostmanExporterTest {
     }
 
     // ========== Folder Export Tests ==========
+
+    @Test
+    fun `round trip preserves URL parameters alongside editor parameters`() {
+        val request =
+            HttpRequest(
+                url = "https://example.test/search?tenant=alpha&tag=a%26b&tag=c%2Bd&empty=#fragment?ignored=yes",
+                queryParams =
+                    listOf(
+                        KeyValue("page", "2"),
+                        KeyValue("tag", "{{tag}}"),
+                        KeyValue("debug", "true", enabled = false),
+                    ),
+            )
+        val collection =
+            RequestCollection(
+                name = "Mixed query",
+                items = listOf(CollectionItem.Request(name = "Search", request = request)),
+            )
+
+        val exported = exporter.export(collection)
+        val restored = PostmanImporter().import(exported).getOrThrow()
+        val restoredRequest = (restored.items.single() as CollectionItem.Request).request
+
+        assertEquals("https://example.test/search", restoredRequest.url)
+        assertEquals(
+            listOf(
+                "tenant" to "alpha",
+                "tag" to "a&b",
+                "tag" to "c+d",
+                "empty" to "",
+                "page" to "2",
+                "tag" to "{{tag}}",
+                "debug" to "true",
+            ),
+            restoredRequest.queryParams.map { it.key to it.value },
+        )
+        assertEquals(listOf(true, true, true, true, true, true, false), restoredRequest.queryParams.map { it.enabled })
+    }
 
     @Test
     fun `export should include folders with nested requests`() {

@@ -31,6 +31,7 @@ import su.kidoz.postest.domain.model.KeyValue
 import su.kidoz.postest.domain.model.RequestBody
 import su.kidoz.postest.domain.model.RequestCollection
 import su.kidoz.postest.domain.model.Variable
+import su.kidoz.postest.util.parseUrlQuery
 import java.io.File
 import java.io.IOException
 import java.util.UUID
@@ -149,7 +150,7 @@ class PostmanExporter {
             protocol = parsed.protocol,
             host = parsed.host,
             path = parsed.path,
-            query = request.queryParams.map { convertQueryParam(it) }.ifEmpty { null },
+            query = (parseUrlQuery(urlString) + request.queryParams).map { convertQueryParam(it) }.ifEmpty { null },
             variable = null,
         )
     }
