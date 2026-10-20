@@ -82,20 +82,12 @@ class ImportCollectionUseCase(
         return when {
             openAPIImporter.isOpenAPISpec(content) -> {
                 logger.info { "Detected OpenAPI specification format" }
-                val result = openAPIImporter.import(content)
-                result.onSuccess { collection ->
-                    collectionRepository.importCollection(collection)
-                }
-                result
+                persist(openAPIImporter.import(content))
             }
 
             postmanImporter.isPostmanCollection(content) -> {
                 logger.info { "Detected Postman collection format" }
-                val result = postmanImporter.import(content)
-                result.onSuccess { collection ->
-                    collectionRepository.importCollection(collection)
-                }
-                result
+                persist(postmanImporter.import(content))
             }
 
             else -> {
@@ -111,6 +103,22 @@ class ImportCollectionUseCase(
             }
         }
     }
+
+    private suspend fun persist(result: Result<RequestCollection>): Result<RequestCollection> =
+        result.fold(
+            onSuccess = { collection ->
+                try {
+                    collectionRepository.importCollection(collection)
+                    Result.success(collection)
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    logger.error { "Failed to persist imported collection (${error::class.simpleName})" }
+                    Result.failure(ImportException("Imported collection could not be saved", error))
+                }
+            },
+            onFailure = { error -> Result.failure(error) },
+        )
 
     /**
      * Get list of supported import formats.

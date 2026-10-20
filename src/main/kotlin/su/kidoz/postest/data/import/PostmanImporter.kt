@@ -4,7 +4,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.serialization.json.Json
 import su.kidoz.postest.domain.model.*
 import su.kidoz.postest.util.JsonFormatter
-import su.kidoz.postest.util.XmlFormatter
+import java.net.URLDecoder
 import java.util.UUID
 
 private val logger = KotlinLogging.logger {}
@@ -127,14 +127,14 @@ class PostmanImporter {
             return HttpRequest()
         }
 
-        val url = postmanRequest.url?.toUrlString() ?: ""
-        val queryParams = extractQueryParams(postmanRequest.url)
+        val rawUrl = postmanRequest.url?.toUrlString() ?: ""
+        val queryParams = extractQueryParams(postmanRequest.url, rawUrl)
 
         return HttpRequest(
             id = UUID.randomUUID().toString(),
             name = "",
             method = convertMethod(postmanRequest.method),
-            url = cleanUrl(url),
+            url = cleanUrl(rawUrl),
             headers = postmanRequest.header?.mapNotNull { convertHeader(it) } ?: emptyList(),
             queryParams = queryParams,
             body = convertBody(postmanRequest.body),
@@ -169,19 +169,45 @@ class PostmanImporter {
         )
     }
 
-    private fun extractQueryParams(url: PostmanUrl?): List<KeyValue> =
-        url?.query?.map { param ->
-            KeyValue(
-                key = param.key ?: "",
-                value = param.value ?: "",
-                enabled = param.disabled != true,
-                description = param.description ?: "",
-            )
-        } ?: emptyList()
+    private fun extractQueryParams(
+        url: PostmanUrl?,
+        rawUrl: String,
+    ): List<KeyValue> {
+        val structured = url?.query
+        if (!structured.isNullOrEmpty()) {
+            return structured.map { param ->
+                KeyValue(
+                    key = param.key ?: "",
+                    value = param.value ?: "",
+                    enabled = param.disabled != true,
+                    description = param.description ?: "",
+                )
+            }
+        }
+        return parseQueryString(rawUrl)
+    }
+
+    private fun parseQueryString(rawUrl: String): List<KeyValue> {
+        val queryStart = rawUrl.indexOf('?')
+        if (queryStart < 0) return emptyList()
+        val fragmentStart = rawUrl.indexOf('#', queryStart)
+        val query = rawUrl.substring(queryStart + 1, if (fragmentStart >= 0) fragmentStart else rawUrl.length)
+        return query
+            .split("&")
+            .filter { it.isNotBlank() }
+            .map { pair ->
+                KeyValue(
+                    key = decodeQueryComponent(pair.substringBefore('=')),
+                    value = decodeQueryComponent(pair.substringAfter('=', "")),
+                )
+            }
+    }
+
+    private fun decodeQueryComponent(value: String): String = runCatching { URLDecoder.decode(value, Charsets.UTF_8) }.getOrDefault(value)
 
     private fun cleanUrl(url: String): String {
-        // Remove query string from URL (we handle params separately)
-        return url.split("?").firstOrNull() ?: url
+        // Query parameters are stored separately; fragments are not sent to the server.
+        return url.substringBefore('#').substringBefore('?')
     }
 
     private fun convertBody(body: PostmanBody?): RequestBody? {
@@ -197,7 +223,7 @@ class PostmanImporter {
                     }
 
                     "xml" -> {
-                        RequestBody.Xml(formatXmlSafely(content))
+                        RequestBody.Xml(content)
                     }
 
                     else -> {
@@ -209,7 +235,7 @@ class PostmanImporter {
                             }
 
                             trimmed.startsWith("<?xml") || trimmed.startsWith("<") -> {
-                                RequestBody.Xml(formatXmlSafely(content))
+                                RequestBody.Xml(content)
                             }
 
                             else -> {
@@ -241,10 +267,11 @@ class PostmanImporter {
                 RequestBody.FormData(
                     fields =
                         body.formdata?.map { param ->
+                            val isFile = param.type == "file"
                             FormField(
                                 key = param.key,
-                                value = param.value ?: param.src ?: "",
-                                type = if (param.type == "file") FormFieldType.FILE else FormFieldType.TEXT,
+                                value = if (isFile) "" else param.value ?: "",
+                                type = if (isFile) FormFieldType.FILE else FormFieldType.TEXT,
                                 enabled = param.disabled != true,
                             )
                         } ?: emptyList(),
@@ -259,7 +286,8 @@ class PostmanImporter {
             }
 
             "file" -> {
-                RequestBody.Binary(filePath = body.file?.src ?: "")
+                // Never trust a file path from an imported collection; the user must reselect it.
+                RequestBody.Binary(filePath = "")
             }
 
             else -> {
@@ -342,21 +370,6 @@ class PostmanImporter {
                 JsonFormatter.format(content)
             } catch (e: Exception) {
                 logger.debug(e) { "Failed to format JSON on import, keeping original" }
-                content
-            }
-        }
-
-    /**
-     * Safely format XML content, returning original if formatting fails.
-     */
-    private fun formatXmlSafely(content: String): String =
-        if (content.isBlank()) {
-            content
-        } else {
-            try {
-                XmlFormatter.format(content)
-            } catch (e: Exception) {
-                logger.debug(e) { "Failed to format XML on import, keeping original" }
                 content
             }
         }

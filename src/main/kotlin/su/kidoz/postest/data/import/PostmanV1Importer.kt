@@ -277,7 +277,8 @@ class PostmanV1Importer {
             }
 
             "binary" -> {
-                RequestBody.Binary(filePath = request.data ?: "")
+                // Never trust a file path from an imported collection; the user must reselect it.
+                RequestBody.Binary(filePath = "")
             }
 
             "graphql" -> {

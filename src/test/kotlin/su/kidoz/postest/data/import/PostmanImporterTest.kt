@@ -677,4 +677,134 @@ class PostmanImporterTest {
         assertEquals("query { users { id name } }", body.query)
         assertEquals("{\"limit\": 10}", body.variables)
     }
+
+    @Test
+    fun `query parameters in a string URL are imported`() {
+        val json =
+            """
+            {
+                "info": {
+                    "name": "Test",
+                    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+                },
+                "item": [
+                    {
+                        "name": "Get users",
+                        "request": {
+                            "method": "GET",
+                            "url": "https://api.example.com/users?page=2&q=test%20value#top"
+                        }
+                    }
+                ]
+            }
+            """.trimIndent()
+
+        val collection = importer.import(json).getOrThrow()
+        val request = (collection.items.single() as CollectionItem.Request).request
+
+        assertEquals("https://api.example.com/users", request.url)
+        assertEquals(listOf("page" to "2", "q" to "test value"), request.queryParams.map { it.key to it.value })
+    }
+
+    @Test
+    fun `imported binary bodies do not retain a local file path`() {
+        val json =
+            """
+            {
+                "info": {
+                    "name": "Test",
+                    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+                },
+                "item": [
+                    {
+                        "name": "Upload",
+                        "request": {
+                            "method": "POST",
+                            "url": "https://api.example.com/upload",
+                            "body": {
+                                "mode": "file",
+                                "file": { "src": "/home/user/.postest/postest.db" }
+                            }
+                        }
+                    }
+                ]
+            }
+            """.trimIndent()
+
+        val collection = importer.import(json).getOrThrow()
+        val body = (collection.items.single() as CollectionItem.Request).request.body
+
+        assertTrue(body is RequestBody.Binary)
+        assertEquals("", (body as RequestBody.Binary).filePath)
+    }
+
+    @Test
+    fun `imported form-data file fields do not retain a local file path`() {
+        val json =
+            """
+            {
+                "info": {
+                    "name": "Test",
+                    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+                },
+                "item": [
+                    {
+                        "name": "Upload",
+                        "request": {
+                            "method": "POST",
+                            "url": "https://api.example.com/upload",
+                            "body": {
+                                "mode": "formdata",
+                                "formdata": [
+                                    { "key": "attachment", "type": "file", "src": "/home/user/.postest/postest.db" }
+                                ]
+                            }
+                        }
+                    }
+                ]
+            }
+            """.trimIndent()
+
+        val collection = importer.import(json).getOrThrow()
+        val body = (collection.items.single() as CollectionItem.Request).request.body
+
+        assertTrue(body is RequestBody.FormData)
+        val field = (body as RequestBody.FormData).fields.single()
+        assertEquals(FormFieldType.FILE, field.type)
+        assertEquals("", field.value)
+    }
+
+    @Test
+    fun `imported XML bodies are preserved without automatic formatting`() {
+        val raw = "<root>  <item> keep  spacing </item> </root>"
+        val json =
+            """
+            {
+                "info": {
+                    "name": "Test",
+                    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+                },
+                "item": [
+                    {
+                        "name": "XML",
+                        "request": {
+                            "method": "POST",
+                            "url": "https://api.example.com/xml",
+                            "body": {
+                                "mode": "raw",
+                                "raw": "$raw",
+                                "options": { "raw": { "language": "xml" } }
+                            }
+                        }
+                    }
+                ]
+            }
+            """.trimIndent()
+
+        val collection = importer.import(json).getOrThrow()
+        val body = (collection.items.single() as CollectionItem.Request).request.body
+
+        assertTrue(body is RequestBody.Xml)
+        assertEquals(raw, (body as RequestBody.Xml).content)
+    }
 }

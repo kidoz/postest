@@ -157,20 +157,22 @@ class PostmanExporter {
     private fun buildRawUrl(request: HttpRequest): String {
         val base = request.url
         val enabledParams = request.queryParams.filter { it.enabled }
+        if (enabledParams.isEmpty()) return base
 
-        return if (enabledParams.isEmpty()) {
-            base
-        } else {
-            val queryString =
-                enabledParams.joinToString("&") { param ->
-                    "${param.key}=${param.value}"
-                }
-            if (base.contains("?")) {
-                "$base&$queryString"
-            } else {
-                "$base?$queryString"
+        val queryString =
+            enabledParams.joinToString("&") { param ->
+                "${param.key}=${param.value}"
             }
-        }
+        val fragmentIndex = base.indexOf('#')
+        val urlWithoutFragment = if (fragmentIndex >= 0) base.substring(0, fragmentIndex) else base
+        val fragment = if (fragmentIndex >= 0) base.substring(fragmentIndex) else ""
+        val separator =
+            when {
+                urlWithoutFragment.endsWith("?") || urlWithoutFragment.endsWith("&") -> ""
+                urlWithoutFragment.contains("?") -> "&"
+                else -> "?"
+            }
+        return urlWithoutFragment + separator + queryString + fragment
     }
 
     private data class ParsedUrl(
@@ -190,8 +192,8 @@ class PostmanExporter {
                 url
             }
 
-        // Remove query string
-        val withoutQuery = withoutProtocol.split("?").first()
+        // Remove query string and fragment
+        val withoutQuery = withoutProtocol.substringBefore('#').substringBefore('?')
 
         // Split host and path
         val parts = withoutQuery.split("/", limit = 2)
