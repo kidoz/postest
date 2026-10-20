@@ -17,6 +17,7 @@ import su.kidoz.postest.domain.model.DraftSession
 import su.kidoz.postest.domain.model.DraftTab
 import su.kidoz.postest.domain.model.HttpRequest
 import su.kidoz.postest.domain.model.HttpResponse
+import su.kidoz.postest.domain.model.MAX_PERSISTED_RESPONSE_BYTES
 import su.kidoz.postest.domain.model.RequestBody
 import su.kidoz.postest.domain.model.ResponseTime
 import su.kidoz.postest.domain.usecase.ManageSessionUseCase
@@ -370,5 +371,39 @@ class SessionManagerTest {
             advanceTimeBy(301)
             runCurrent()
             coVerify { useCase.save(match { it.tabs.single().collectionItemId == "item-1" }) }
+        }
+
+    @Test
+    fun `autosave truncates oversized response bodies`() =
+        runTest {
+            val body = "x".repeat(MAX_PERSISTED_RESPONSE_BYTES + 100)
+            val response =
+                HttpResponse(
+                    statusCode = 200,
+                    statusText = "OK",
+                    headers = emptyMap(),
+                    body = body,
+                    contentType = "text/plain",
+                    size = body.length.toLong(),
+                    time = ResponseTime(total = 100),
+                )
+            val withResponse = initial.copy(response = response, request = initial.request.copy(url = "/large"))
+            state.value = state.value.copy(tabs = listOf(withResponse))
+            val manager = manager(backgroundScope)
+            manager.initialize()
+            runCurrent()
+            state.value = state.value.copy(tabs = listOf(withResponse.copy(request = withResponse.request.copy(url = "/edited"))))
+            runCurrent()
+            advanceTimeBy(301)
+            runCurrent()
+
+            coVerify {
+                useCase.save(
+                    match {
+                        val saved = it.tabs.single().response!!
+                        saved.truncated && saved.body.length == MAX_PERSISTED_RESPONSE_BYTES
+                    },
+                )
+            }
         }
 }

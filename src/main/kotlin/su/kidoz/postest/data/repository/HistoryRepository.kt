@@ -13,6 +13,7 @@ import su.kidoz.postest.data.db.PostestDatabase
 import su.kidoz.postest.domain.model.HistoryEntry
 import su.kidoz.postest.domain.model.HttpRequest
 import su.kidoz.postest.domain.model.HttpResponse
+import su.kidoz.postest.domain.model.limitBodyForStorage
 import java.util.UUID
 
 private val logger = KotlinLogging.logger {}
@@ -59,20 +60,21 @@ class HistoryRepository(
         withContext(Dispatchers.IO) {
             val entryId = entry.id.ifBlank { UUID.randomUUID().toString() }
             val entryWithId = if (entry.id.isBlank()) entry.copy(id = entryId) else entry
+            val storedEntry = entryWithId.copy(response = entryWithId.response?.limitBodyForStorage())
 
             database.postestQueries.insertHistoryEntry(
                 id = entryId,
-                request_json = json.encodeToString(entry.request),
-                response_json = entry.response?.let { json.encodeToString(it) },
-                error_message = entry.errorMessage,
-                duration = entry.duration,
-                timestamp = entry.timestamp,
+                request_json = json.encodeToString(storedEntry.request),
+                response_json = storedEntry.response?.let { json.encodeToString(it) },
+                error_message = storedEntry.errorMessage,
+                duration = storedEntry.duration,
+                timestamp = storedEntry.timestamp,
             )
             database.postestQueries.deleteOldHistory()
 
             // Incremental update: prepend new entry (history is ordered newest first)
             _history.update { currentHistory ->
-                (listOf(entryWithId) + currentHistory).take(200)
+                (listOf(storedEntry) + currentHistory).take(200)
             }
         }
 

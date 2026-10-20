@@ -15,6 +15,7 @@ import kotlinx.coroutines.launch
 import su.kidoz.postest.domain.model.DraftSession
 import su.kidoz.postest.domain.model.DraftTab
 import su.kidoz.postest.domain.model.RequestBody
+import su.kidoz.postest.domain.model.limitBodyForStorage
 import su.kidoz.postest.domain.usecase.ManageSessionUseCase
 import su.kidoz.postest.viewmodel.AppSideEffect
 import su.kidoz.postest.viewmodel.AppState
@@ -125,7 +126,7 @@ class SessionManager(
                         isDirty = tab.isDirty,
                         bodyDrafts = inactiveDrafts,
                         collectionItemId = tab.collectionItemId,
-                        response = tab.response,
+                        response = tab.response?.limitBodyForStorage(),
                         error = tab.error,
                     )
                 },

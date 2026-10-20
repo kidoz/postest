@@ -6,6 +6,7 @@ import su.kidoz.postest.domain.model.HistoryEntry
 import su.kidoz.postest.domain.model.HttpMethod
 import su.kidoz.postest.domain.model.HttpRequest
 import su.kidoz.postest.domain.model.HttpResponse
+import su.kidoz.postest.domain.model.MAX_PERSISTED_RESPONSE_BYTES
 import su.kidoz.postest.domain.model.ResponseTime
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -193,6 +194,35 @@ class HistoryRepositoryTest {
             val history = repository.loadHistory()
 
             assertTrue(history.first().id.isNotBlank())
+        }
+
+    @Test
+    fun `large response bodies are truncated in persisted history`() =
+        runTest {
+            val body = "x".repeat(MAX_PERSISTED_RESPONSE_BYTES + 100)
+            val response =
+                HttpResponse(
+                    statusCode = 200,
+                    statusText = "OK",
+                    headers = emptyMap(),
+                    body = body,
+                    contentType = "text/plain",
+                    size = body.length.toLong(),
+                    time = ResponseTime(total = 100),
+                )
+
+            repository.addHistoryEntry(createHistoryEntry(response = response))
+
+            val persisted = repository.loadHistory().single().response!!
+            assertTrue(persisted.truncated)
+            assertEquals(MAX_PERSISTED_RESPONSE_BYTES, persisted.body.length)
+            assertEquals(
+                persisted,
+                repository.history
+                    .first()
+                    .single()
+                    .response,
+            )
         }
 
     private fun createHistoryEntry(
