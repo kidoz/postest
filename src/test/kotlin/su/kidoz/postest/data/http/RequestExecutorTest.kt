@@ -7,8 +7,14 @@ import io.ktor.client.request.HttpRequestData
 import io.ktor.client.request.HttpResponseData
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
+import io.ktor.utils.io.ByteChannel
+import io.ktor.utils.io.writeFully
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import su.kidoz.postest.domain.model.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -576,6 +582,34 @@ class RequestExecutorTest {
             assertTrue(response.truncated)
             assertEquals(10 * 1024 * 1024L, response.size)
             assertEquals(10 * 1024 * 1024, response.body.length)
+        }
+
+    @Test
+    fun `oversized streaming responses finish without waiting for EOF`() =
+        runTest {
+            val channel = ByteChannel(autoFlush = true)
+            val producer =
+                backgroundScope.launch {
+                    channel.writeFully(ByteArray(10 * 1024 * 1024 + 1) { 'a'.code.toByte() })
+                    // Leave the stream open: a buffered request would wait indefinitely for EOF.
+                }
+            val client = createMockClient { respond(content = channel) }
+            try {
+                val response =
+                    withContext(Dispatchers.Default) {
+                        // Ktor's engine runs outside the test scheduler; use a real deadline.
+                        withTimeout(5_000) {
+                            RequestExecutor(client).execute(HttpRequest(url = "https://example.test/stream")).getOrThrow()
+                        }
+                    }
+                assertTrue(response.truncated)
+                assertEquals(10 * 1024 * 1024L, response.size)
+                assertTrue(channel.isClosedForRead)
+            } finally {
+                channel.cancel(null)
+                producer.cancel()
+                client.close()
+            }
         }
 
     @Test

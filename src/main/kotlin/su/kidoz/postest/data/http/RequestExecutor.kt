@@ -6,7 +6,7 @@ import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.forms.FormDataContent
 import io.ktor.client.request.forms.MultiPartFormDataContent
 import io.ktor.client.request.forms.formData
-import io.ktor.client.request.request
+import io.ktor.client.request.prepareRequest
 import io.ktor.client.request.setBody
 import io.ktor.client.request.url
 import io.ktor.client.statement.bodyAsChannel
@@ -16,7 +16,7 @@ import io.ktor.http.Parameters
 import io.ktor.http.charset
 import io.ktor.http.contentType
 import io.ktor.http.encodeURLParameter
-import io.ktor.utils.io.readRemaining
+import io.ktor.utils.io.readBuffer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -43,6 +43,7 @@ import su.kidoz.postest.util.VariableResolver
 import java.net.URI
 import java.nio.file.Paths
 import java.util.Base64
+import io.ktor.client.statement.HttpResponse as KtorHttpResponse
 import io.ktor.http.HttpMethod as KtorHttpMethod
 
 private val logger = KotlinLogging.logger {}
@@ -144,8 +145,8 @@ class RequestExecutor(
             val binaryBody = (request.body as? RequestBody.Binary)?.let { loadBinaryBody(it, context) }
             val sensitiveHeaders = mutableSetOf<String>()
 
-            val response =
-                effectiveClient.request(resolvedUrl) {
+            val statement =
+                effectiveClient.prepareRequest(resolvedUrl) {
                     this.method = request.method.toKtorMethod()
                     attributes.put(OriginalRequestAuthority, url.authorityKey())
                     attributes.put(SensitiveRequestHeaders, sensitiveHeaders)
@@ -180,49 +181,7 @@ class RequestExecutor(
                     }
                 }
 
-            // Time to first byte (headers received)
-            val firstByteTime = System.currentTimeMillis()
-            val timeToFirstByte = firstByteTime - startTime
-
-            // Read body with a hard limit so a large response cannot exhaust memory
-            val bodyPacket = response.bodyAsChannel().readRemaining(MAX_RESPONSE_BYTES + 1)
-            val receivedBytes = bodyPacket.readByteArray()
-            val truncated = receivedBytes.size > MAX_RESPONSE_BYTES
-            val bodyBytes =
-                if (truncated) {
-                    receivedBytes.copyOf(MAX_RESPONSE_BYTES.toInt())
-                } else {
-                    receivedBytes
-                }
-            val charset = response.contentType()?.charset() ?: Charsets.UTF_8
-            val bodyText = bodyBytes.toString(charset)
-            val downloadEndTime = System.currentTimeMillis()
-            val downloadTime = downloadEndTime - firstByteTime
-
-            val totalTime = downloadEndTime - startTime
-
-            val httpResponse =
-                HttpResponse(
-                    statusCode = response.status.value,
-                    statusText = response.status.description,
-                    headers = response.headers.entries().associate { it.key to it.value },
-                    body = bodyText,
-                    contentType = response.headers[HttpHeaders.ContentType],
-                    size = bodyBytes.size.toLong(),
-                    time =
-                        ResponseTime(
-                            total = totalTime,
-                            firstByte = timeToFirstByte,
-                            download = downloadTime,
-                        ),
-                    truncated = truncated,
-                )
-
-            logger.info {
-                "Response received: ${httpResponse.statusCode} ${httpResponse.statusText} " +
-                    "in ${totalTime}ms (TTFB: ${timeToFirstByte}ms, Download: ${downloadTime}ms)"
-            }
-            httpResponse
+            statement.execute { response -> readResponse(response, startTime) }
         }.also {
             certClient?.close()
         }.onFailure { error ->
@@ -230,6 +189,55 @@ class RequestExecutor(
             if (error is CancellationException) throw error
             logger.error { "Request failed for ${request.method} to host: $host (${error::class.simpleName})" }
         }
+    }
+
+    private suspend fun readResponse(
+        response: KtorHttpResponse,
+        startTime: Long,
+    ): HttpResponse {
+        // Time to first byte (headers received)
+        val firstByteTime = System.currentTimeMillis()
+        val timeToFirstByte = firstByteTime - startTime
+
+        // Read body with a hard limit so a large response cannot exhaust memory
+        val bodyPacket = response.bodyAsChannel().readBuffer(MAX_RESPONSE_BYTES + 1)
+        val receivedBytes = bodyPacket.readByteArray()
+        val truncated = receivedBytes.size > MAX_RESPONSE_BYTES
+        val bodyBytes =
+            if (truncated) {
+                receivedBytes.copyOf(MAX_RESPONSE_BYTES.toInt())
+            } else {
+                receivedBytes
+            }
+        val charset = response.contentType()?.charset() ?: Charsets.UTF_8
+        val bodyText = bodyBytes.toString(charset)
+        val downloadEndTime = System.currentTimeMillis()
+        val downloadTime = downloadEndTime - firstByteTime
+
+        val totalTime = downloadEndTime - startTime
+
+        val httpResponse =
+            HttpResponse(
+                statusCode = response.status.value,
+                statusText = response.status.description,
+                headers = response.headers.entries().associate { it.key to it.value },
+                body = bodyText,
+                contentType = response.headers[HttpHeaders.ContentType],
+                size = bodyBytes.size.toLong(),
+                time =
+                    ResponseTime(
+                        total = totalTime,
+                        firstByte = timeToFirstByte,
+                        download = downloadTime,
+                    ),
+                truncated = truncated,
+            )
+
+        logger.info {
+            "Response received: ${httpResponse.statusCode} ${httpResponse.statusText} " +
+                "in ${totalTime}ms (TTFB: ${timeToFirstByte}ms, Download: ${downloadTime}ms)"
+        }
+        return httpResponse
     }
 
     private suspend fun resolveClientCertificate(
@@ -398,7 +406,7 @@ class RequestExecutor(
                         ?.let { resolved ->
                             runCatching { Json.parseToJsonElement(resolved) }
                                 .getOrElse {
-                                    logger.warn(it) { "Failed to parse GraphQL variables JSON, sending without variables" }
+                                    logger.warn { "Failed to parse GraphQL variables JSON, sending without variables" }
                                     null
                                 }
                         }
