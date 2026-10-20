@@ -18,11 +18,11 @@ A modern, lightweight REST API client built with Kotlin and Compose Multiplatfor
 - **Request Builder** - Headers, query parameters, and body editor
 - **Body Types** - JSON, GraphQL, form data, multipart, raw text, binary
 - **Authentication** - Basic Auth, Bearer Token, API Key, Client Certificate (mTLS)
-- **Collections** - Organize requests into collections and folders
+- **Collections** - Organize requests into collections and nested folders, with drag-and-drop moves between folders
 - **Environments** - Manage variables across different environments
 - **Variable Substitution** - Use `{{variable}}` syntax in URLs, headers, and body
 - **History** - Track and replay previous requests
-- **Draft Recovery** - Restore open tabs, selected requests, and per-format body drafts after restarting; edits autosave locally
+- **Draft Recovery** - Restore open tabs, selected requests, per-format body drafts, and last responses after restarting; edits autosave locally
 - **Response Viewer** - Formatted JSON, headers, cookies, and timing info
 - **Dark & Light Themes** - Modern UI with toggleable dark and light themes
 
@@ -57,7 +57,7 @@ makepkg -si
 
 ```bash
 ./gradlew packageDeb
-sudo dpkg -i build/compose/binaries/main/deb/postest_1.0.0_amd64.deb
+sudo dpkg -i build/compose/binaries/main/deb/postest_1.1.0_amd64.deb
 ```
 
 ### Windows (MSI, build locally)

@@ -4,7 +4,7 @@ package su.kidoz.postest.util
  * Application version information and comparison utilities.
  */
 object AppVersion {
-    const val CURRENT = "1.0.0"
+    const val CURRENT = "1.1.0"
     const val GITHUB_OWNER = "kidoz"
     const val GITHUB_REPO = "postest"
 

@@ -1,6 +1,6 @@
 cask "postest" do
-  version "1.0.0"
-  sha256 "REPLACE_WITH_ACTUAL_SHA256"
+  version "1.1.0"
+  sha256 "706f2916eaeb7bb332a923df9cb7910875cd92a70ef3daec01e62846231ce24d"
 
   url "https://github.com/kidoz/postest/releases/download/v#{version}/Postest-#{version}.dmg"
   name "Postest"

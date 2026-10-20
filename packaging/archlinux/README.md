@@ -60,5 +60,5 @@ sudo pacman -R postest
 Check package for issues:
 ```bash
 namcap PKGBUILD
-namcap postest-1.0.0-1-x86_64.pkg.tar.zst
+namcap postest-1.1.0-1-x86_64.pkg.tar.zst
 ```

@@ -12,7 +12,7 @@ plugins {
 }
 
 group = "su.kidoz.postest"
-version = "1.0.0"
+version = "1.1.0"
 
 repositories {
     mavenCentral()
@@ -108,7 +108,7 @@ compose.desktop {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             modules("java.naming", "java.sql")
             packageName = "Postest"
-            packageVersion = "1.0.0"
+            packageVersion = "1.1.0"
             description = "A modern REST API client for testing and debugging HTTP APIs"
             vendor = "Kidoz"
             copyright = "© 2025 kidoz. All rights reserved."

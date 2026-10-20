@@ -10,7 +10,7 @@ This project ships a native DMG via Compose Desktop. Build on macOS so codesigni
 
 This runs `./gradlew packageDmg` and leaves the artifact at:
 
-- `build/compose/binaries/main/dmg/Postest-1.0.0.dmg`
+- `build/compose/binaries/main/dmg/Postest-1.1.0.dmg`
 
 ## Notes
 

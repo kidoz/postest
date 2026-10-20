@@ -35,7 +35,7 @@ cd /path/to/postest
 ./gradlew packageDmg
 ```
 
-The DMG will be at: `build/compose/binaries/main/dmg/Postest-1.0.0.dmg`
+The DMG will be at: `build/compose/binaries/main/dmg/Postest-1.1.0.dmg`
 
 ### Updating the Cask
 
@@ -43,7 +43,7 @@ The DMG will be at: `build/compose/binaries/main/dmg/Postest-1.0.0.dmg`
 
 2. Generate SHA256:
    ```bash
-   shasum -a 256 build/compose/binaries/main/dmg/Postest-1.0.0.dmg
+   shasum -a 256 build/compose/binaries/main/dmg/Postest-1.1.0.dmg
    ```
 
 3. Update `postest.rb`:
