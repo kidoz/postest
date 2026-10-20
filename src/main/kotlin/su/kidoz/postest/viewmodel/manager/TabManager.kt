@@ -35,39 +35,71 @@ class TabManager(
      * Asks before discarding edits. Clean tabs close immediately.
      */
     fun closeTab(tabId: String) {
+        closeTabs(listOf(tabId))
+    }
+
+    fun closeAllTabs() {
+        closeTabs(stateProvider().tabs.map { it.id })
+    }
+
+    fun closeOtherTabs(tabId: String) {
+        closeTabs(stateProvider().tabs.filter { it.id != tabId }.map { it.id })
+    }
+
+    fun closeTabsToLeft(tabId: String) {
+        val tabs = stateProvider().tabs
+        val index = tabs.indexOfFirst { it.id == tabId }
+        if (index > 0) closeTabs(tabs.take(index).map { it.id })
+    }
+
+    fun closeTabsToRight(tabId: String) {
+        val tabs = stateProvider().tabs
+        val index = tabs.indexOfFirst { it.id == tabId }
+        if (index >= 0 && index < tabs.lastIndex) closeTabs(tabs.drop(index + 1).map { it.id })
+    }
+
+    private fun closeTabs(tabIds: List<String>) {
         stateUpdater.update { state ->
-            when (state.tabs.find { it.id == tabId }?.isDirty) {
-                true -> state.copy(pendingCloseTabId = tabId)
-                false -> removeTab(state, tabId)
-                null -> state
+            val requestedIds = tabIds.toSet()
+            val affected = state.tabs.filter { it.id in requestedIds }
+            when {
+                affected.isEmpty() -> state
+                affected.any { it.isDirty } -> state.copy(pendingCloseTabIds = affected.map { it.id })
+                else -> removeTabs(state, requestedIds)
             }
         }
     }
 
-    fun discardPendingTab() {
+    fun discardPendingTabs() {
         stateUpdater.update { state ->
-            state.pendingCloseTabId?.let { removeTab(state, it) } ?: state
+            if (state.pendingCloseTabIds.isEmpty()) {
+                state
+            } else {
+                removeTabs(state, state.pendingCloseTabIds.toSet())
+            }
         }
     }
 
     fun cancelTabClose() {
-        stateUpdater.update { it.copy(pendingCloseTabId = null) }
+        stateUpdater.update { it.copy(pendingCloseTabIds = emptyList()) }
     }
 
-    private fun removeTab(
+    private fun removeTabs(
         state: AppState,
-        tabId: String,
+        tabIds: Set<String>,
     ): AppState {
-        val index = state.tabs.indexOfFirst { it.id == tabId }
-        if (index < 0) return state.copy(pendingCloseTabId = null)
-        val remaining = state.tabs.filter { it.id != tabId }.ifEmpty { listOf(TabState()) }
+        if (tabIds.isEmpty()) return state
+        val remaining = state.tabs.filterNot { it.id in tabIds }.ifEmpty { listOf(TabState()) }
+        val currentActiveId = state.activeTab?.id
         val activeId =
-            if (state.activeTab?.id == tabId) {
-                remaining[index.coerceAtMost(remaining.lastIndex)].id
+            if (currentActiveId != null && currentActiveId in tabIds) {
+                val firstRemovedIndex = state.tabs.indexOfFirst { it.id in tabIds }
+                val keptBefore = state.tabs.take(firstRemovedIndex.coerceAtLeast(0)).count { it.id !in tabIds }
+                remaining[keptBefore.coerceAtMost(remaining.lastIndex)].id
             } else {
                 state.activeTabId
             }
-        return state.copy(tabs = remaining, activeTabId = activeId, pendingCloseTabId = null)
+        return state.copy(tabs = remaining, activeTabId = activeId, pendingCloseTabIds = emptyList())
     }
 
     /**

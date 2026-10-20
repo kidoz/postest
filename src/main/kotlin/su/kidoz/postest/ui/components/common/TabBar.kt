@@ -11,11 +11,19 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.isSecondaryPressed
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -36,6 +44,10 @@ fun RequestTabBar(
     selectedTabId: String?,
     onTabSelect: (String) -> Unit,
     onTabClose: (String) -> Unit,
+    onCloseAll: () -> Unit,
+    onCloseOthers: (String) -> Unit,
+    onCloseToLeft: (String) -> Unit,
+    onCloseToRight: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val scrollState = rememberScrollState()
@@ -49,12 +61,18 @@ fun RequestTabBar(
                 .padding(horizontal = 4.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        tabs.forEach { tab ->
+        tabs.forEachIndexed { index, tab ->
             RequestTab(
                 tab = tab,
+                index = index,
+                tabCount = tabs.size,
                 isSelected = tab.id == selectedTabId,
                 onClick = { onTabSelect(tab.id) },
                 onClose = { onTabClose(tab.id) },
+                onCloseAll = onCloseAll,
+                onCloseOthers = { onCloseOthers(tab.id) },
+                onCloseToLeft = { onCloseToLeft(tab.id) },
+                onCloseToRight = { onCloseToRight(tab.id) },
             )
         }
     }
@@ -63,9 +81,15 @@ fun RequestTabBar(
 @Composable
 private fun RequestTab(
     tab: TabItem,
+    index: Int,
+    tabCount: Int,
     isSelected: Boolean,
     onClick: () -> Unit,
     onClose: () -> Unit,
+    onCloseAll: () -> Unit,
+    onCloseOthers: () -> Unit,
+    onCloseToLeft: () -> Unit,
+    onCloseToRight: () -> Unit,
 ) {
     val extendedColors = AppTheme.extendedColors
     val methodColor =
@@ -79,39 +103,103 @@ private fun RequestTab(
             HttpMethod.OPTIONS -> extendedColors.methodOptions
         }
 
-    AppTooltip(tab.title) {
-        Surface(
-            modifier =
-                Modifier
-                    .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
-                    .selectable(selected = isSelected, role = Role.Tab, onClick = onClick),
-            color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+    var showContextMenu by remember { mutableStateOf(false) }
+
+    Box(
+        modifier =
+            Modifier
+                .testTag("tab-${tab.id}")
+                .pointerInput(tab.id) {
+                    awaitPointerEventScope {
+                        var secondaryPressed = false
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            when {
+                                event.type == PointerEventType.Press && event.buttons.isSecondaryPressed -> {
+                                    secondaryPressed = true
+                                }
+
+                                event.type == PointerEventType.Release && secondaryPressed -> {
+                                    secondaryPressed = false
+                                    showContextMenu = true
+                                }
+                            }
+                        }
+                    }
+                },
+    ) {
+        AppTooltip(tab.title) {
+            Surface(
+                modifier =
+                    Modifier
+                        .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
+                        .selectable(selected = isSelected, role = Role.Tab, onClick = onClick),
+                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
             ) {
-                Text(
-                    text = tab.method.name,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = methodColor,
-                )
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        text = tab.method.name,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = methodColor,
+                    )
 
-                Text(
-                    text = if (tab.isDirty) "${tab.title} *" else tab.title,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.widthIn(max = 150.dp),
-                )
+                    Text(
+                        text = if (tab.isDirty) "${tab.title} *" else tab.title,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.widthIn(max = 150.dp),
+                    )
 
-                DesktopIconButton(
-                    icon = Icons.Default.Close,
-                    description = "Close tab",
-                    onClick = onClose,
-                )
+                    DesktopIconButton(
+                        icon = Icons.Default.Close,
+                        description = "Close tab",
+                        onClick = onClose,
+                    )
+                }
             }
+        }
+
+        DropdownMenu(
+            expanded = showContextMenu,
+            onDismissRequest = { showContextMenu = false },
+        ) {
+            DropdownMenuItem(
+                text = { Text("Close All") },
+                onClick = {
+                    showContextMenu = false
+                    onCloseAll()
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Close Others") },
+                enabled = tabCount > 1,
+                onClick = {
+                    showContextMenu = false
+                    onCloseOthers()
+                },
+            )
+            HorizontalDivider()
+            DropdownMenuItem(
+                text = { Text("Close Tabs to the Left") },
+                enabled = index > 0,
+                onClick = {
+                    showContextMenu = false
+                    onCloseToLeft()
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Close Tabs to the Right") },
+                enabled = index < tabCount - 1,
+                onClick = {
+                    showContextMenu = false
+                    onCloseToRight()
+                },
+            )
         }
     }
 }

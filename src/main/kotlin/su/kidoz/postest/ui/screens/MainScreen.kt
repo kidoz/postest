@@ -168,13 +168,28 @@ fun MainScreen(
         }
     }
 
-    state.tabs.find { it.id == state.pendingCloseTabId }?.let { tab ->
+    val pendingCloseTabs = state.tabs.filter { it.id in state.pendingCloseTabIds }
+    if (pendingCloseTabs.isNotEmpty()) {
+        val dirtyTabs = pendingCloseTabs.filter { it.isDirty }
+        val singleTab = pendingCloseTabs.singleOrNull()
         ConfirmDialog(
-            title = "Discard request changes?",
-            message = "Changes to “${requestDisplayName(tab.request.name, tab.request.url)}” will be lost.",
+            title =
+                if (singleTab != null) {
+                    "Discard request changes?"
+                } else {
+                    "Discard changes in ${dirtyTabs.size} ${if (dirtyTabs.size == 1) "tab" else "tabs"}?"
+                },
+            message =
+                if (singleTab != null) {
+                    "Changes to “${requestDisplayName(singleTab.request.name, singleTab.request.url)}” will be lost."
+                } else if (dirtyTabs.size == pendingCloseTabs.size) {
+                    "Changes in ${dirtyTabs.size} tabs will be lost."
+                } else {
+                    "Changes in ${dirtyTabs.size} of ${pendingCloseTabs.size} tabs will be lost."
+                },
             confirmText = "Discard",
             isDestructive = true,
-            onConfirm = viewModel::discardPendingTab,
+            onConfirm = viewModel::discardPendingTabs,
             onDismiss = viewModel::cancelTabClose,
         )
     }
@@ -322,6 +337,10 @@ private fun TopAppBar(
                     selectedTabId = state.activeTabId,
                     onTabSelect = { viewModel.selectTab(it) },
                     onTabClose = { viewModel.closeTab(it) },
+                    onCloseAll = viewModel::closeAllTabs,
+                    onCloseOthers = viewModel::closeOtherTabs,
+                    onCloseToLeft = viewModel::closeTabsToLeft,
+                    onCloseToRight = viewModel::closeTabsToRight,
                 )
             }
 

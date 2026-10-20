@@ -24,10 +24,10 @@ class TabManagerTest {
         val request = HttpRequest(url = "https://example.test/orders", body = RequestBody.Json("{\"order\":42}"))
         manager.updateRequest(id, request)
         manager.closeTab(id)
-        assertEquals(id, state.pendingCloseTabId)
+        assertEquals(listOf(id), state.pendingCloseTabIds)
         assertEquals(request, state.activeTab?.request)
         manager.cancelTabClose()
-        assertNull(state.pendingCloseTabId)
+        assertTrue(state.pendingCloseTabIds.isEmpty())
         assertEquals(request, state.activeTab?.request)
     }
 
@@ -39,10 +39,10 @@ class TabManagerTest {
         state = AppState(tabs = listOf(first, edited, next), activeTabId = edited.id)
         manager.closeTab(edited.id)
         assertEquals(3, state.tabs.size)
-        manager.discardPendingTab()
+        manager.discardPendingTabs()
         assertEquals(listOf(first, next), state.tabs)
         assertEquals(next.id, state.activeTabId)
-        assertNull(state.pendingCloseTabId)
+        assertTrue(state.pendingCloseTabIds.isEmpty())
     }
 
     @Test
@@ -57,7 +57,7 @@ class TabManagerTest {
     fun `discarding the only modified tab leaves a clean workspace`() {
         state = AppState(tabs = listOf(TabState(id = "only", isDirty = true)), activeTabId = "only")
         manager.closeTab("only")
-        manager.discardPendingTab()
+        manager.discardPendingTabs()
         assertEquals(1, state.tabs.size)
         assertFalse(state.activeTab!!.isDirty)
         assertEquals(state.tabs.single().id, state.activeTabId)
@@ -149,5 +149,97 @@ class TabManagerTest {
     fun `new tabs are not linked to a collection item`() {
         manager.newTab()
         assertNull(state.activeTab?.collectionItemId)
+    }
+
+    @Test
+    fun `close all tabs leaves a fresh empty tab`() {
+        state =
+            AppState(
+                tabs = listOf(TabState(id = "one"), TabState(id = "two"), TabState(id = "three")),
+                activeTabId = "two",
+            )
+
+        manager.closeAllTabs()
+
+        assertEquals(1, state.tabs.size)
+        assertEquals(state.tabs.single().id, state.activeTabId)
+    }
+
+    @Test
+    fun `close other tabs keeps the referenced tab`() {
+        state =
+            AppState(
+                tabs = listOf(TabState(id = "one"), TabState(id = "two"), TabState(id = "three")),
+                activeTabId = "two",
+            )
+
+        manager.closeOtherTabs("two")
+
+        assertEquals(listOf("two"), state.tabs.map { it.id })
+        assertEquals("two", state.activeTabId)
+    }
+
+    @Test
+    fun `close other tabs selects the kept tab when the active tab is removed`() {
+        state =
+            AppState(
+                tabs = listOf(TabState(id = "one"), TabState(id = "two"), TabState(id = "three")),
+                activeTabId = "one",
+            )
+
+        manager.closeOtherTabs("two")
+
+        assertEquals(listOf("two"), state.tabs.map { it.id })
+        assertEquals("two", state.activeTabId)
+    }
+
+    @Test
+    fun `close tabs to the left and right use the referenced tab`() {
+        state =
+            AppState(
+                tabs = listOf("one", "two", "three", "four").map { TabState(id = it) },
+                activeTabId = "three",
+            )
+
+        manager.closeTabsToLeft("three")
+        assertEquals(listOf("three", "four"), state.tabs.map { it.id })
+        assertEquals("three", state.activeTabId)
+
+        manager.closeTabsToRight("three")
+        assertEquals(listOf("three"), state.tabs.map { it.id })
+        assertEquals("three", state.activeTabId)
+    }
+
+    @Test
+    fun `bulk close waits for confirmation when an affected tab is dirty`() {
+        state =
+            AppState(
+                tabs = listOf(TabState(id = "clean"), TabState(id = "dirty", isDirty = true), TabState(id = "third")),
+                activeTabId = "clean",
+            )
+
+        manager.closeAllTabs()
+
+        assertEquals(listOf("clean", "dirty", "third"), state.pendingCloseTabIds)
+        assertEquals(3, state.tabs.size)
+
+        manager.discardPendingTabs()
+
+        assertEquals(1, state.tabs.size)
+        assertTrue(state.pendingCloseTabIds.isEmpty())
+    }
+
+    @Test
+    fun `closing other tabs does not ask about a dirty tab that is kept`() {
+        state =
+            AppState(
+                tabs = listOf(TabState(id = "dirty", isDirty = true), TabState(id = "clean")),
+                activeTabId = "dirty",
+            )
+
+        manager.closeOtherTabs("dirty")
+
+        assertEquals(listOf("dirty"), state.tabs.map { it.id })
+        assertTrue(state.pendingCloseTabIds.isEmpty())
     }
 }

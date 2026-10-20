@@ -59,7 +59,7 @@ data class AppState(
     val showEnvironmentDialog: Boolean = false,
     val showNewCollectionDialog: Boolean = false,
     val isInitialized: Boolean = false,
-    val pendingCloseTabId: String? = null,
+    val pendingCloseTabIds: List<String> = emptyList(),
 ) {
     val activeTab: TabState?
         get() = tabs.find { it.id == activeTabId } ?: tabs.firstOrNull()
@@ -194,8 +194,24 @@ class MainViewModel(
         tabManager.closeTab(tabId)
     }
 
-    fun discardPendingTab() {
-        tabManager.discardPendingTab()
+    fun closeAllTabs() {
+        tabManager.closeAllTabs()
+    }
+
+    fun closeOtherTabs(tabId: String) {
+        tabManager.closeOtherTabs(tabId)
+    }
+
+    fun closeTabsToLeft(tabId: String) {
+        tabManager.closeTabsToLeft(tabId)
+    }
+
+    fun closeTabsToRight(tabId: String) {
+        tabManager.closeTabsToRight(tabId)
+    }
+
+    fun discardPendingTabs() {
+        tabManager.discardPendingTabs()
     }
 
     fun cancelTabClose() {
