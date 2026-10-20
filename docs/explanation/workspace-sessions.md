@@ -31,7 +31,7 @@ Closing waits for restoration, freezes workspace edits, cancels and joins reques
 
 ## Where it is stored
 
-The snapshot is encrypted JSON in the `WorkspaceSession` table of `~/.postest/posttest.db`:
+The snapshot is JSON, encrypted when the workspace uses encrypted storage, in the `WorkspaceSession` table of `~/.postest/posttest.db`:
 
 | Row | Purpose |
 |-----|---------|
@@ -49,7 +49,7 @@ If the user edits the workspace while the saved session is still loading, the re
 ## Trade-offs
 
 - Responses are stored with the session using the persisted-response size limit. The live response remains separate from the bounded recovery copy.
-- The session contains the same sensitive values as the request: auth credentials, client-certificate passphrases, and response bodies. The snapshot is encrypted at rest, including its backup copy. See [Security model](security-model.md).
+- The session contains the same sensitive values as the request: auth credentials, client-certificate passphrases, and response bodies. The snapshot and its backup copy follow the workspace storage mode: encrypted or readable plaintext. See [Security model](security-model.md).
 - The snapshot is local to the machine and is never uploaded.
 
 ## Related

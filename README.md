@@ -163,11 +163,13 @@ src/main/kotlin/su/kidoz/postest/
 
 ## Configuration
 
+On first run, choose encrypted storage (with an OS keychain and recovery key) or unencrypted storage (no key required). The choice is remembered for the workspace.
+
 Application data is stored in `~/.postest/`:
 
 ```
 ~/.postest/
-├── posttest.db  # SQLite with encrypted user content
+├── posttest.db  # SQLite with your chosen storage protection
 └── logs/
     ├── postest.log  # Application logs
     └── error.log    # Error logs only

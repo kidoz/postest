@@ -18,7 +18,9 @@ Log rotation:
 - `postest.log` keeps 7 days, up to 50 MB.
 - `postest-error.log` keeps 30 days, up to 100 MB.
 
-The database is SQLite with encrypted user-content columns. Back it up while the app is closed and keep its recovery key separately. The OS credential store holds the encryption key; see [Security model](../explanation/security-model.md).
+On first run, choose **Encrypted (recommended)** or **Unencrypted** storage. The choice is saved in the SQLite database. Encrypted storage keeps its key in the OS credential store and requires saving a recovery key; unencrypted storage needs neither and stores sensitive values as readable text. Existing databases retain their mode, and there is no in-place mode switch.
+
+Back up the database while Postest is closed. For encrypted storage, keep its recovery key separately; see [Security model](../explanation/security-model.md).
 
 ## HTTP timeouts
 

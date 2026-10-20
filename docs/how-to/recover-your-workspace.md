@@ -33,7 +33,7 @@ The `WorkspaceSession` table keeps one `current` snapshot. A `backup` copy is ma
 
 ## Unlocking and recovering protected storage
 
-On first startup, save the recovery key in a password manager. You can display it again with **Storage → Show Recovery Key**.
+For an encrypted workspace, save the recovery key in a password manager during setup. Unencrypted workspaces do not have or need a recovery key. You can display it again with **Storage → Show Recovery Key**.
 
 If the OS credential store is locked, unlock it and choose **Retry unlocking**. If its key entry is missing or incorrect, enter your saved recovery key and choose **Recover storage**. Postest verifies the database before storing the recovered key. It does not start a new workspace or autosave while storage is inaccessible.
 
@@ -61,7 +61,7 @@ To delete collections, environments, history, and the saved workspace, close Pos
 
 Previous-version backups use `posttest.db.bak`, `posttest.db.bak.1`, and so on. Those files also contain saved data; remove them too if you intend to delete all saved copies.
 
-**Warning:** this cannot be undone. Back up the file and save the recovery key first if you may need the data. The OS credential entry remains until removed through the operating system; a new database uses a new key and vault identifier.
+**Warning:** this cannot be undone. Back up the file and save the recovery key first if you may need the data. The OS credential entry remains until removed through the operating system; a new workspace asks you to choose its storage mode. Choosing encrypted storage creates a new key and vault identifier.
 
 ## Related
 

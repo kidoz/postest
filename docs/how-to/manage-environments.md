@@ -59,7 +59,7 @@ Deleting the active environment clears the active selection.
 
 ## Secrets
 
-Secret variables are masked in the environment editor. Their values, like all other stored request and environment data, are encrypted at rest. See the [security model](../explanation/security-model.md).
+Secret variables are masked in the environment editor. Their values, like all other stored request and environment data, are encrypted at rest only when the workspace uses encrypted storage. In unencrypted mode, masking does not protect the database file. See the [security model](../explanation/security-model.md).
 
 ## Related
 
