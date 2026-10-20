@@ -38,9 +38,9 @@ OAuth 2.0 supports **Authorization Code with PKCE** and **Client Credentials**:
 
 Authorization Code opens your default browser and returns through a temporary `http://127.0.0.1:<port>/callback` listener. Register loopback redirects with your provider; the port is chosen at runtime. The flow uses PKCE (S256), verifies the `state` value, and times out after five minutes.
 
-The acquired access token is stored with the request. **Clear Token** removes the stored token. When a stored token expires but a refresh token is available, Postest refreshes it in memory for subsequent requests; if the provider rotates refresh tokens, authorize again after restarting.
+The acquired access token is stored with the request. **Clear Token** removes the stored token. When a stored token expires and a refresh token is available, Postest refreshes it before sending and saves the refreshed access and refresh tokens with the request, so rotated refresh tokens survive a restart.
 
-Grant types not listed here, such as Password or Implicit, are not supported.
+Grant types not listed here, such as Password or Implicit, are intentionally unsupported because they are deprecated.
 
 ## Client certificate (mTLS)
 

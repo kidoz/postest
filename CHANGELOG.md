@@ -30,8 +30,9 @@ All notable changes to Postest are documented in this file. Releases are listed 
 - Optional WebSocket auto-reconnect with exponential backoff (10 attempts, 1–30 seconds).
 - WebSocket transcripts restored after a restart, within a 1 MB / 200-message persistence budget.
 - OAuth 2.0 Authorization Code with PKCE, using the system browser and a temporary loopback redirect.
-- OAuth 2.0 Client Credentials and in-memory refresh-token handling.
+- OAuth 2.0 Client Credentials and refresh-token handling.
 - OAuth 2.0 tokens stored with the request, with fixed error messages that omit endpoints and token values.
+- Expired OAuth 2.0 tokens refresh before sending, and rotated access/refresh tokens are persisted with the request.
 - Postman OAuth 2.0 auth import and export.
 - SHA-256 certificate and public-key pinning for HTTP and WebSocket requests, with Base64, hex, and `sha256/` pin formats.
 - Certificate pins support variable substitution and run in addition to normal TLS chain validation.
@@ -54,7 +55,7 @@ All notable changes to Postest are documented in this file. Releases are listed 
 
 ### Known Limitations
 
-- OAuth 2.0 Password and Implicit grants are not supported. Refresh tokens are cached in memory; providers that rotate refresh tokens may require reauthorization after a restart.
+- OAuth 2.0 Password and Implicit grants are intentionally unsupported because they are deprecated.
 - Received WebSocket binary payloads are summarized as a size notice instead of being rendered.
 - Client certificates are not applied to WebSocket connections.
 - Certificate pinning supports one leaf pin per request; backup pins and custom CA settings are not supported.
