@@ -16,6 +16,7 @@ import io.ktor.http.Parameters
 import io.ktor.http.charset
 import io.ktor.http.contentType
 import io.ktor.http.encodeURLParameter
+import io.ktor.network.tls.CertificateAndKey
 import io.ktor.utils.io.readBuffer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -35,6 +36,7 @@ import su.kidoz.postest.domain.model.HttpRequest
 import su.kidoz.postest.domain.model.HttpResponse
 import su.kidoz.postest.domain.model.RequestBody
 import su.kidoz.postest.domain.model.RequestFailure
+import su.kidoz.postest.domain.model.RequestFailureException
 import su.kidoz.postest.domain.model.RequestOutcome
 import su.kidoz.postest.domain.model.ResponseTime
 import su.kidoz.postest.domain.model.Variable
@@ -74,6 +76,10 @@ class RequestExecutor(
                 if (error is CancellationException) throw error
                 val failure =
                     when (error) {
+                        is RequestFailureException -> {
+                            error.reason
+                        }
+
                         is SecurityException -> {
                             RequestFailure.BLOCKED
                         }
@@ -94,7 +100,7 @@ class RequestExecutor(
                             RequestFailure.TIMEOUT
                         }
 
-                        is javax.net.ssl.SSLException -> {
+                        is javax.net.ssl.SSLException, is java.security.cert.CertificateException -> {
                             RequestFailure.TLS
                         }
 
@@ -132,16 +138,34 @@ class RequestExecutor(
             }
         }
 
-        // Resolve client certificate if needed
-        val certClient =
+        if (request.certificatePin != null && !resolvedUrl.startsWith("https://", ignoreCase = true)) {
+            return Result.failure(RequestFailureException(RequestFailure.INVALID_CERTIFICATE_PIN))
+        }
+
+        // Certificate pinning is additive to normal chain validation.
+        val trustManager =
+            try {
+                request.certificatePin?.let { pin ->
+                    createPinningTrustManager(pin.copy(sha256 = context.resolve(pin.sha256)))
+                }
+            } catch (error: RequestFailureException) {
+                return Result.failure(error)
+            }
+        val certAndKey =
             runCatching { resolveClientCertificate(request.clientCertificate, context) }.getOrElse { e ->
                 logger.error { "Failed to load client certificate (${e::class.simpleName})" }
                 return Result.failure(IllegalArgumentException("Client certificate could not be loaded"))
             }
+        val tlsClient =
+            if (trustManager != null || certAndKey != null) {
+                HttpClientFactory.createWithTls(certAndKey = certAndKey, trustManager = trustManager)
+            } else {
+                null
+            }
 
         return runCatching {
             val startTime = System.currentTimeMillis()
-            val effectiveClient = certClient ?: client
+            val effectiveClient = tlsClient ?: client
 
             // Read binary body off the calling thread before building the request
             val binaryBody = (request.body as? RequestBody.Binary)?.let { loadBinaryBody(it, context) }
@@ -185,7 +209,7 @@ class RequestExecutor(
 
             statement.execute { response -> readResponse(response, startTime) }
         }.also {
-            certClient?.close()
+            tlsClient?.close()
         }.onFailure { error ->
             // Cancellation must propagate instead of surfacing as a request failure
             if (error is CancellationException) throw error
@@ -245,7 +269,7 @@ class RequestExecutor(
     private suspend fun resolveClientCertificate(
         certConfig: ClientCertConfig?,
         context: ResolutionContext,
-    ): HttpClient? {
+    ): CertificateAndKey? {
         if (certConfig == null) return null
 
         val certPath = context.resolve(certConfig.certPath)
@@ -253,8 +277,7 @@ class RequestExecutor(
         val passphrase = context.resolve(certConfig.passphrase)
 
         logger.info { "Loading client certificate for mTLS" }
-        val certAndKey = withContext(Dispatchers.IO) { CertificateLoader.load(certPath, keyPath, passphrase) }
-        return HttpClientFactory.createWithClientCertificate(certAndKey)
+        return withContext(Dispatchers.IO) { CertificateLoader.load(certPath, keyPath, passphrase) }
     }
 
     private fun buildUrl(

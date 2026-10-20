@@ -20,6 +20,7 @@ enum class RequestFailure(
     val description: String,
 ) {
     INVALID_REQUEST("Invalid request"),
+    INVALID_CERTIFICATE_PIN("Certificate pin is invalid"),
     BLOCKED("Request blocked"),
     HOST_NOT_FOUND("Host not found"),
     CONNECTION_FAILED("Connection failed"),

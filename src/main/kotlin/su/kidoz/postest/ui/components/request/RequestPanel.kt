@@ -94,6 +94,8 @@ fun RequestPanel(
                         onClientCertChange = { onRequestChange(request.copy(clientCertificate = it)) },
                         showClientCertificate = request.protocol == RequestProtocol.HTTP,
                         onAuthorizeOAuth2 = onAuthorizeOAuth2,
+                        certificatePin = request.certificatePin,
+                        onCertificatePinChange = { onRequestChange(request.copy(certificatePin = it)) },
                     )
                 }
             }

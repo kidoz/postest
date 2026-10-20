@@ -12,6 +12,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import su.kidoz.postest.domain.model.AuthConfig
+import su.kidoz.postest.domain.model.CertificatePin
+import su.kidoz.postest.domain.model.CertificatePinMode
 import su.kidoz.postest.domain.model.ClientCertConfig
 import su.kidoz.postest.domain.model.OAuth2GrantType
 import java.time.Instant
@@ -39,6 +41,8 @@ fun AuthPanel(
     modifier: Modifier = Modifier,
     showClientCertificate: Boolean = true,
     onAuthorizeOAuth2: (AuthConfig.OAuth2) -> Unit = {},
+    certificatePin: CertificatePin? = null,
+    onCertificatePinChange: (CertificatePin?) -> Unit = {},
 ) {
     val authType =
         when (auth) {
@@ -130,6 +134,57 @@ fun AuthPanel(
                 Spacer(Modifier.height(8.dp))
                 HorizontalDivider()
             }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        // Certificate pinning applies to both HTTP and WebSocket requests.
+        val pinEnabled = certificatePin != null
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Checkbox(
+                checked = pinEnabled,
+                onCheckedChange = { enabled ->
+                    onCertificatePinChange(if (enabled) certificatePin ?: CertificatePin() else null)
+                },
+                modifier = Modifier.testTag("certificate-pin"),
+            )
+            Text("Certificate Pinning", style = MaterialTheme.typography.titleSmall)
+        }
+
+        if (certificatePin != null) {
+            Column(
+                modifier = Modifier.padding(start = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = certificatePin.mode == CertificatePinMode.CERTIFICATE,
+                        onClick = { onCertificatePinChange(certificatePin.copy(mode = CertificatePinMode.CERTIFICATE)) },
+                        label = { Text("Certificate") },
+                    )
+                    FilterChip(
+                        selected = certificatePin.mode == CertificatePinMode.PUBLIC_KEY,
+                        onClick = { onCertificatePinChange(certificatePin.copy(mode = CertificatePinMode.PUBLIC_KEY)) },
+                        label = { Text("Public Key") },
+                    )
+                }
+                OutlinedTextField(
+                    value = certificatePin.sha256,
+                    onValueChange = { onCertificatePinChange(certificatePin.copy(sha256 = it)) },
+                    label = { Text("SHA-256 pin") },
+                    placeholder = { Text("Base64, hex, or sha256/...") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+                Text(
+                    "Pins the leaf certificate or public key. Base64, hex, and sha256/ values are accepted; " +
+                        "normal TLS chain validation still applies.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            HorizontalDivider()
         }
 
         Spacer(Modifier.height(12.dp))

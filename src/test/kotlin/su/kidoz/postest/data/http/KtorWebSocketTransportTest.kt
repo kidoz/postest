@@ -1,8 +1,13 @@
 package su.kidoz.postest.data.http
 
+import kotlinx.coroutines.test.runTest
 import su.kidoz.postest.domain.model.AuthConfig
+import su.kidoz.postest.domain.model.CertificatePin
+import su.kidoz.postest.domain.model.ExecutionContext
 import su.kidoz.postest.domain.model.HttpRequest
 import su.kidoz.postest.domain.model.KeyValue
+import su.kidoz.postest.domain.model.RequestProtocol
+import su.kidoz.postest.util.VariableResolver
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -77,6 +82,50 @@ class KtorWebSocketTransportTest {
         assertEquals(true, hasHeaderInjection(token) { it })
         assertEquals(false, hasHeaderInjection(safe) { it })
     }
+
+    @Test
+    fun `invalid certificate pins are rejected before connecting`() =
+        runTest {
+            val client = HttpClientFactory.create()
+            try {
+                val result =
+                    KtorWebSocketTransport(client, VariableResolver())
+                        .connect(
+                            HttpRequest(
+                                protocol = RequestProtocol.WEBSOCKET,
+                                url = "wss://example.test/socket",
+                                certificatePin = CertificatePin(sha256 = "bad"),
+                            ),
+                            ExecutionContext(),
+                        )
+
+                assertEquals("Certificate pin is invalid", result.exceptionOrNull()?.message)
+            } finally {
+                client.close()
+            }
+        }
+
+    @Test
+    fun `certificate pins require a secure websocket url`() =
+        runTest {
+            val client = HttpClientFactory.create()
+            try {
+                val result =
+                    KtorWebSocketTransport(client, VariableResolver())
+                        .connect(
+                            HttpRequest(
+                                protocol = RequestProtocol.WEBSOCKET,
+                                url = "ws://example.test/socket",
+                                certificatePin = CertificatePin(sha256 = "0".repeat(64)),
+                            ),
+                            ExecutionContext(),
+                        )
+
+                assertEquals("Certificate pin is invalid", result.exceptionOrNull()?.message)
+            } finally {
+                client.close()
+            }
+        }
 
     @Test
     fun `invalid urls produce no websocket url`() {

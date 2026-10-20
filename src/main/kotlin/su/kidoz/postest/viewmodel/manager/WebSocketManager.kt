@@ -187,6 +187,9 @@ class WebSocketManager(
             throw cancelled
         } catch (_: Exception) {
             workspace.dispatch(WorkspaceCommand.WebSocketClosed(tabId, connectionId, systemMessage = "Connection closed"))
+        } finally {
+            // Releases transport resources, including a dedicated pinned TLS client.
+            connection.abort()
         }
     }
 

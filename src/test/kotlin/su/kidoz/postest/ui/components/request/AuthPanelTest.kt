@@ -11,10 +11,13 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.runComposeUiTest
 import su.kidoz.postest.domain.model.AuthConfig
+import su.kidoz.postest.domain.model.CertificatePin
+import su.kidoz.postest.domain.model.CertificatePinMode
 import su.kidoz.postest.domain.model.OAuth2GrantType
 import su.kidoz.postest.ui.theme.AppTheme
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 @OptIn(ExperimentalTestApi::class)
@@ -56,5 +59,28 @@ class AuthPanelTest {
                 assertTrue(cleared.accessToken.isBlank())
                 assertEquals(0, cleared.expiresAt)
             }
+        }
+
+    @Test
+    fun `certificate pin section toggles and changes mode`() =
+        runComposeUiTest {
+            var pin by mutableStateOf<CertificatePin?>(null)
+            setContent {
+                AppTheme {
+                    AuthPanel(
+                        auth = AuthConfig.None,
+                        clientCertificate = null,
+                        onAuthChange = {},
+                        onClientCertChange = {},
+                        certificatePin = pin,
+                        onCertificatePinChange = { pin = it },
+                    )
+                }
+            }
+
+            onNodeWithTag("certificate-pin").performClick()
+            runOnIdle { assertNotNull(pin) }
+            onNodeWithText("Public Key").performClick()
+            runOnIdle { assertEquals(CertificatePinMode.PUBLIC_KEY, pin?.mode) }
         }
 }

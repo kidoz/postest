@@ -21,6 +21,7 @@ data class HttpRequest(
     val body: RequestBody? = null,
     val auth: AuthConfig? = null,
     val clientCertificate: ClientCertConfig? = null,
+    val certificatePin: CertificatePin? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
 )
@@ -34,6 +35,18 @@ enum class HttpMethod {
     DELETE,
     HEAD,
     OPTIONS,
+}
+
+@Serializable
+data class CertificatePin(
+    val mode: CertificatePinMode = CertificatePinMode.CERTIFICATE,
+    val sha256: String = "",
+)
+
+@Serializable
+enum class CertificatePinMode {
+    CERTIFICATE,
+    PUBLIC_KEY,
 }
 
 @Serializable

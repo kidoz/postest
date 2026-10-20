@@ -13,6 +13,8 @@ import io.ktor.network.tls.CertificateAndKey
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.util.AttributeKey
 import kotlinx.serialization.json.Json
+import su.kidoz.postest.domain.model.CertificatePin
+import javax.net.ssl.X509TrustManager
 
 /** Header names that must not be forwarded when a redirect changes the request origin. */
 internal val SensitiveRequestHeaders = AttributeKey<Set<String>>("PostestSensitiveRequestHeaders")
@@ -67,11 +69,24 @@ object HttpClientFactory {
     fun createWithClientCertificate(
         certAndKey: CertificateAndKey,
         enableLogging: Boolean = false,
-    ): HttpClient = buildClient(certAndKey = certAndKey, enableLogging = enableLogging)
+        trustManager: X509TrustManager? = null,
+    ): HttpClient = buildClient(certAndKey = certAndKey, enableLogging = enableLogging, trustManager = trustManager)
+
+    fun createWithServerPin(
+        pin: CertificatePin,
+        enableLogging: Boolean = false,
+    ): HttpClient = createWithTls(trustManager = createPinningTrustManager(pin), enableLogging = enableLogging)
+
+    fun createWithTls(
+        certAndKey: CertificateAndKey? = null,
+        trustManager: X509TrustManager? = null,
+        enableLogging: Boolean = false,
+    ): HttpClient = buildClient(certAndKey = certAndKey, enableLogging = enableLogging, trustManager = trustManager)
 
     private fun buildClient(
         certAndKey: CertificateAndKey? = null,
         enableLogging: Boolean = false,
+        trustManager: X509TrustManager? = null,
     ): HttpClient =
         HttpClient(CIO) {
             install(ContentNegotiation) {
@@ -104,9 +119,10 @@ object HttpClientFactory {
 
             engine {
                 requestTimeout = 60_000
-                if (certAndKey != null) {
+                if (certAndKey != null || trustManager != null) {
                     https {
-                        certificates += certAndKey
+                        if (certAndKey != null) certificates += certAndKey
+                        if (trustManager != null) this.trustManager = trustManager
                     }
                 }
             }

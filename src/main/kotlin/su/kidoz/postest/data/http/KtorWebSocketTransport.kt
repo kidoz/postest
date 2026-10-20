@@ -57,26 +57,40 @@ class KtorWebSocketTransport(
         if (hasHeaderInjection(request, ::resolve)) {
             return Result.failure(RequestFailureException(RequestFailure.INVALID_REQUEST))
         }
+        if (request.certificatePin != null && !url.startsWith("wss://", ignoreCase = true)) {
+            return Result.failure(RequestFailureException(RequestFailure.INVALID_CERTIFICATE_PIN))
+        }
 
+        var pinnedClient: HttpClient? = null
         return try {
+            pinnedClient =
+                request.certificatePin?.let { pin ->
+                    HttpClientFactory.createWithServerPin(pin.copy(sha256 = resolve(pin.sha256)))
+                }
             val oauth2Header =
                 (request.auth as? AuthConfig.OAuth2)?.let { config ->
                     oauth2Authorization(resolveOAuth2Token(config, oauth2TokenProvider, ::resolve))
                 }
             val session =
-                client.webSocketSession {
+                (pinnedClient ?: client).webSocketSession {
                     url(url)
                     request.headers
                         .filter { it.enabled && it.key.isNotBlank() }
                         .forEach { header(resolve(it.key), resolve(it.value)) }
                     applyAuth(request.auth, ::resolve, oauth2Header) { key, value -> header(key, value) }
                 }
-            Result.success(KtorWebSocketConnection(session))
+            Result.success(KtorWebSocketConnection(session, pinnedClient))
         } catch (cancelled: CancellationException) {
+            pinnedClient?.close()
             throw cancelled
+        } catch (failure: RequestFailureException) {
+            pinnedClient?.close()
+            Result.failure(failure)
         } catch (auth: OAuth2Exception) {
+            pinnedClient?.close()
             Result.failure(auth)
         } catch (error: Exception) {
+            pinnedClient?.close()
             Result.failure(RequestFailureException(webSocketFailure(error)))
         }
     }
@@ -144,7 +158,7 @@ internal fun webSocketFailure(error: Throwable): RequestFailure =
         is UnknownHostException -> RequestFailure.HOST_NOT_FOUND
         is ConnectException -> RequestFailure.CONNECTION_FAILED
         is HttpRequestTimeoutException, is SocketTimeoutException -> RequestFailure.TIMEOUT
-        is SSLException -> RequestFailure.TLS
+        is SSLException, is java.security.cert.CertificateException -> RequestFailure.TLS
         is IllegalArgumentException -> RequestFailure.INVALID_REQUEST
         else -> RequestFailure.NETWORK
     }
@@ -200,6 +214,7 @@ internal fun buildWebSocketUrl(
 
 private class KtorWebSocketConnection(
     private val session: DefaultClientWebSocketSession,
+    private val ownedClient: HttpClient? = null,
 ) : WebSocketConnection {
     private val sendMutex = Mutex()
 
@@ -222,10 +237,15 @@ private class KtorWebSocketConnection(
     }
 
     override suspend fun close() {
-        session.close(CloseReason(CloseReason.Codes.NORMAL, "Closed by user"))
+        try {
+            session.close(CloseReason(CloseReason.Codes.NORMAL, "Closed by user"))
+        } finally {
+            ownedClient?.close()
+        }
     }
 
     override fun abort() {
         session.cancel(CancellationException("WebSocket closed"))
+        ownedClient?.close()
     }
 }

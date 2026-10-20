@@ -783,6 +783,38 @@ class RequestExecutorTest {
         }
 
     @Test
+    fun `invalid certificate pins fail before sending`() =
+        runTest {
+            val result =
+                RequestExecutor(createMockClient { respond(content = "") })
+                    .execute(
+                        HttpRequest(
+                            url = "https://api.example.com",
+                            certificatePin = CertificatePin(sha256 = "bad"),
+                        ),
+                    )
+
+            assertTrue(result.isFailure)
+            assertEquals("Certificate pin is invalid", result.exceptionOrNull()?.message)
+        }
+
+    @Test
+    fun `certificate pins require HTTPS`() =
+        runTest {
+            val result =
+                RequestExecutor(createMockClient { respond(content = "") })
+                    .execute(
+                        HttpRequest(
+                            url = "http://api.example.com",
+                            certificatePin = CertificatePin(sha256 = "0".repeat(64)),
+                        ),
+                    )
+
+            assertTrue(result.isFailure)
+            assertEquals("Certificate pin is invalid", result.exceptionOrNull()?.message)
+        }
+
+    @Test
     fun `invalid URL errors do not include the resolved URL`() =
         runTest {
             val executor = RequestExecutor(createMockClient { respond(content = "") })
