@@ -25,8 +25,12 @@ object XmlFormatter {
     fun format(
         xmlString: String,
         indent: Int = 2,
-    ): String =
-        try {
+    ): String {
+        // Pretty-printing must not change documents that explicitly preserve whitespace.
+        if (xmlString.contains("xml:space=\"preserve\"") || xmlString.contains("xml:space='preserve'")) {
+            return xmlString
+        }
+        return try {
             val indentStr = " ".repeat(indent)
             val writer = StringWriter()
 
@@ -61,7 +65,7 @@ object XmlFormatter {
                             // Write namespaces
                             for (i in 0 until reader.namespaceCount) {
                                 val nsPrefix = reader.getNamespacePrefix(i)
-                                val nsUri = reader.getNamespaceURI(i)
+                                val nsUri = escapeXml(reader.getNamespaceURI(i))
                                 if (nsPrefix.isNullOrEmpty()) {
                                     writer.append(" xmlns=\"$nsUri\"")
                                 } else {
@@ -106,7 +110,8 @@ object XmlFormatter {
                         XMLStreamConstants.CHARACTERS -> {
                             val text = reader.text
                             if (text.isNotBlank()) {
-                                writer.append(escapeXml(text.trim()))
+                                // Preserve significant whitespace inside text nodes.
+                                writer.append(escapeXml(text))
                                 hasContent = true
                             }
                         }
@@ -148,9 +153,13 @@ object XmlFormatter {
             // Fallback to original string
             xmlString
         }
+    }
 
-    fun minify(xmlString: String): String =
-        try {
+    fun minify(xmlString: String): String {
+        if (xmlString.contains("xml:space=\"preserve\"") || xmlString.contains("xml:space='preserve'")) {
+            return xmlString
+        }
+        return try {
             val writer = StringWriter()
 
             inputFactory.createXMLStreamReader(StringReader(xmlString)).use { reader ->
@@ -174,7 +183,7 @@ object XmlFormatter {
 
                             for (i in 0 until reader.namespaceCount) {
                                 val nsPrefix = reader.getNamespacePrefix(i)
-                                val nsUri = reader.getNamespaceURI(i)
+                                val nsUri = escapeXml(reader.getNamespaceURI(i))
                                 if (nsPrefix.isNullOrEmpty()) {
                                     writer.append(" xmlns=\"$nsUri\"")
                                 } else {
@@ -206,8 +215,8 @@ object XmlFormatter {
                         }
 
                         XMLStreamConstants.CHARACTERS -> {
-                            val text = reader.text.trim()
-                            if (text.isNotEmpty()) {
+                            val text = reader.text
+                            if (text.isNotBlank()) {
                                 writer.append(escapeXml(text))
                             }
                         }
@@ -232,6 +241,7 @@ object XmlFormatter {
             logger.debug(e) { "Failed to minify XML: ${e.message}" }
             xmlString
         }
+    }
 
     fun isValid(xmlString: String): Boolean =
         try {
