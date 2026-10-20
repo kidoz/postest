@@ -22,7 +22,7 @@ import su.kidoz.postest.viewmodel.SideEffectEmitter
 import su.kidoz.postest.viewmodel.StateUpdater
 import su.kidoz.postest.viewmodel.TabState
 
-/** Restores once, autosaves request edits, and flushes before an orderly exit. */
+/** Restores once, autosaves tab state (requests, drafts, responses), and flushes before an orderly exit. */
 class SessionManager(
     private val useCase: ManageSessionUseCase,
     private val state: StateFlow<AppState>,
@@ -73,6 +73,8 @@ class SessionManager(
                     id = tab.id,
                     request = tab.request,
                     collectionItemId = tab.collectionItemId,
+                    response = tab.response,
+                    error = tab.error,
                     isDirty = tab.isDirty,
                     bodyDrafts = tab.bodyDrafts.associateBy { it::class },
                 )
@@ -123,6 +125,8 @@ class SessionManager(
                         isDirty = tab.isDirty,
                         bodyDrafts = inactiveDrafts,
                         collectionItemId = tab.collectionItemId,
+                        response = tab.response,
+                        error = tab.error,
                     )
                 },
             activeTabId = app.activeTabId,

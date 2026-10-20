@@ -9,7 +9,9 @@ import su.kidoz.postest.domain.model.DraftTab
 import su.kidoz.postest.domain.model.FormField
 import su.kidoz.postest.domain.model.FormFieldType
 import su.kidoz.postest.domain.model.HttpRequest
+import su.kidoz.postest.domain.model.HttpResponse
 import su.kidoz.postest.domain.model.RequestBody
+import su.kidoz.postest.domain.model.ResponseTime
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -39,7 +41,21 @@ class SessionRepositoryTest {
                     RequestBody.Binary("/tmp/example.bin"),
                     RequestBody.None,
                 )
-            val expected = DraftSession(tabs = listOf(DraftTab("tab", request, true, bodies)), activeTabId = "tab")
+            val response =
+                HttpResponse(
+                    statusCode = 200,
+                    statusText = "OK",
+                    headers = mapOf("Content-Type" to listOf("application/json")),
+                    body = "{\"ok\":true}",
+                    contentType = "application/json",
+                    size = 11,
+                    time = ResponseTime(total = 42),
+                )
+            val expected =
+                DraftSession(
+                    tabs = listOf(DraftTab("tab", request, true, bodies, response = response, error = "previous failure")),
+                    activeTabId = "tab",
+                )
             SessionRepository(database).save(expected)
             assertEquals(expected, SessionRepository(database).load())
             assertTrue(

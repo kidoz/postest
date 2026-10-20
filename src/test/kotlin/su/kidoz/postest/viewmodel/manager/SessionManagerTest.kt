@@ -16,7 +16,9 @@ import kotlinx.coroutines.test.runTest
 import su.kidoz.postest.domain.model.DraftSession
 import su.kidoz.postest.domain.model.DraftTab
 import su.kidoz.postest.domain.model.HttpRequest
+import su.kidoz.postest.domain.model.HttpResponse
 import su.kidoz.postest.domain.model.RequestBody
+import su.kidoz.postest.domain.model.ResponseTime
 import su.kidoz.postest.domain.usecase.ManageSessionUseCase
 import su.kidoz.postest.viewmodel.AppSideEffect
 import su.kidoz.postest.viewmodel.AppState
@@ -52,6 +54,17 @@ class SessionManagerTest {
     private fun edit(url: String) {
         state.value = state.value.copy(tabs = listOf(initial.copy(request = initial.request.copy(url = url), isDirty = true)))
     }
+
+    private fun response() =
+        HttpResponse(
+            statusCode = 200,
+            statusText = "OK",
+            headers = mapOf("Content-Type" to listOf("application/json")),
+            body = "{\"ok\":true}",
+            contentType = "application/json",
+            size = 11,
+            time = ResponseTime(total = 42),
+        )
 
     @Test
     fun `restores tab order selection dirty state and inactive body drafts`() =
@@ -239,15 +252,62 @@ class SessionManagerTest {
         }
 
     @Test
-    fun `response and loading changes do not rewrite request drafts`() =
+    fun `loading changes do not rewrite request drafts`() =
         runTest {
             manager(backgroundScope).initialize()
             runCurrent()
-            state.value = state.value.copy(tabs = listOf(initial.copy(isLoading = true, error = "temporary error")))
+            state.value = state.value.copy(tabs = listOf(initial.copy(isLoading = true)))
             runCurrent()
             advanceTimeBy(500)
             runCurrent()
             coVerify(exactly = 0) { useCase.save(any()) }
+        }
+
+    @Test
+    fun `restore keeps the last response and error`() =
+        runTest {
+            val response = response()
+            coEvery { useCase.load() } returns
+                DraftSession(
+                    tabs =
+                        listOf(
+                            DraftTab(
+                                id = "tab",
+                                request = HttpRequest(),
+                                isDirty = false,
+                                response = response,
+                                error = "previous failure",
+                            ),
+                        ),
+                    activeTabId = "tab",
+                )
+            manager(backgroundScope).initialize()
+            runCurrent()
+
+            val restored = state.value.tabs.single()
+            assertEquals(response, restored.response)
+            assertEquals("previous failure", restored.error)
+        }
+
+    @Test
+    fun `autosave stores the latest response and error`() =
+        runTest {
+            val response = response()
+            val manager = manager(backgroundScope)
+            manager.initialize()
+            runCurrent()
+            state.value = state.value.copy(tabs = listOf(initial.copy(response = response, error = "previous failure")))
+            runCurrent()
+            advanceTimeBy(301)
+            runCurrent()
+
+            coVerify {
+                useCase.save(
+                    match {
+                        it.tabs.single().response == response && it.tabs.single().error == "previous failure"
+                    },
+                )
+            }
         }
 
     @Test
