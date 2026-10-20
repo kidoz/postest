@@ -5,14 +5,17 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import su.kidoz.postest.domain.model.ExecutionContext
 import su.kidoz.postest.domain.model.HttpRequest
+import su.kidoz.postest.domain.model.MAX_WEBSOCKET_BINARY_BYTES
 import su.kidoz.postest.domain.model.OAuth2Exception
 import su.kidoz.postest.domain.model.RequestFailureException
+import su.kidoz.postest.domain.model.RequestProtocol
 import su.kidoz.postest.domain.model.WebSocketDirection
 import su.kidoz.postest.domain.model.WebSocketMessage
 import su.kidoz.postest.domain.model.WebSocketStatus
@@ -34,6 +37,10 @@ class WebSocketManager(
     private val workspace: WorkspaceStore,
     private val effects: SideEffectEmitter,
     private val scope: CoroutineScope,
+    private val maxReconnectAttempts: Int = 10,
+    private val reconnectDelayMillis: (attempt: Int) -> Long = { attempt ->
+        minOf(30_000L, 1_000L shl (attempt - 1).coerceIn(0, 5))
+    },
 ) {
     private data class Active(
         val connectionId: String,
@@ -41,7 +48,15 @@ class WebSocketManager(
         val connection: WebSocketConnection?,
     )
 
+    private data class Session(
+        val request: HttpRequest,
+        val context: ExecutionContext,
+    )
+
     private val active = ConcurrentHashMap<String, Active>()
+    private val sessions = ConcurrentHashMap<String, Session>()
+    private val reconnectJobs = ConcurrentHashMap<String, Job>()
+    private val reconnectAttempts = ConcurrentHashMap<String, Int>()
 
     fun connect(
         tabId: String,
@@ -57,11 +72,14 @@ class WebSocketManager(
                 ?.status
         if (status == WebSocketStatus.CONNECTING || status == WebSocketStatus.CONNECTED) return
 
+        reconnectJobs.remove(tabId)?.cancel()
+        sessions[tabId] = Session(request, context)
         val connectionId = UUID.randomUUID().toString()
         workspace.dispatch(WorkspaceCommand.WebSocketConnecting(tabId, connectionId))
 
         val job =
             scope.launch(start = CoroutineStart.LAZY) {
+                var reconnect = false
                 try {
                     connectWebSocketUseCase.connect(request, context).fold(
                         onSuccess = { connection ->
@@ -71,12 +89,17 @@ class WebSocketManager(
                                 return@launch
                             }
                             workspace.dispatch(WorkspaceCommand.WebSocketConnected(tabId, connectionId))
+                            if (reconnectAttempts.remove(tabId) != null) {
+                                addSystemMessage(tabId, "Reconnected")
+                            }
                             collect(tabId, connectionId, connection)
+                            reconnect = true
                         },
                         onFailure = { error ->
                             val message = publicMessage(error)
                             workspace.dispatch(WorkspaceCommand.WebSocketClosed(tabId, connectionId, error = message))
                             effects.emit(AppSideEffect.ShowError(message))
+                            reconnect = true
                         },
                     )
                 } catch (cancelled: CancellationException) {
@@ -84,9 +107,11 @@ class WebSocketManager(
                 } catch (_: Exception) {
                     workspace.dispatch(WorkspaceCommand.WebSocketClosed(tabId, connectionId, error = "Connection failed"))
                     effects.emit(AppSideEffect.ShowError("Connection failed"))
+                    reconnect = true
                 } finally {
                     active.computeIfPresent(tabId) { _, current -> if (current.connectionId == connectionId) null else current }
                 }
+                if (reconnect) scheduleReconnect(tabId)
             }
         active[tabId] = Active(connectionId, job, connection = null)
         job.start()
@@ -208,8 +233,75 @@ class WebSocketManager(
         }
     }
 
+    fun sendBinary(
+        tabId: String,
+        bytes: ByteArray,
+    ) {
+        if (bytes.isEmpty()) {
+            effects.emit(AppSideEffect.ShowError("Binary message is empty"))
+            return
+        }
+        if (bytes.size > MAX_WEBSOCKET_BINARY_BYTES) {
+            effects.emit(AppSideEffect.ShowError("Binary message is too large"))
+            return
+        }
+        val entry = active[tabId]
+        val connection = entry?.connection
+        if (entry == null || connection == null) {
+            effects.emit(AppSideEffect.ShowError("WebSocket is not connected"))
+            return
+        }
+        scope.launch {
+            try {
+                connection.sendBinary(bytes)
+                workspace.dispatch(
+                    WorkspaceCommand.WebSocketMessageAdded(
+                        tabId,
+                        entry.connectionId,
+                        WebSocketMessage(
+                            direction = WebSocketDirection.SYSTEM,
+                            content = "Binary message sent (${bytes.size} bytes)",
+                        ),
+                    ),
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                effects.emit(AppSideEffect.ShowError("Binary message could not be sent"))
+            }
+        }
+    }
+
+    fun setAutoReconnect(
+        tabId: String,
+        enabled: Boolean,
+    ) {
+        workspace.dispatch(WorkspaceCommand.WebSocketAutoReconnectChanged(tabId, enabled))
+        if (enabled) {
+            if (workspace.state.value.tabs
+                    .firstOrNull { it.id == tabId }
+                    ?.webSocket
+                    ?.status == WebSocketStatus.DISCONNECTED &&
+                sessions.containsKey(tabId)
+            ) {
+                scheduleReconnect(tabId, immediate = true)
+            }
+        } else {
+            reconnectJobs.remove(tabId)?.cancel()
+            reconnectAttempts.remove(tabId)
+            addSystemMessage(tabId, "Automatic reconnection disabled")
+        }
+    }
+
     fun disconnect(tabId: String) {
-        val entry = active.remove(tabId) ?: return
+        reconnectJobs.remove(tabId)?.cancel()
+        reconnectAttempts.remove(tabId)
+        sessions.remove(tabId)
+        val entry = active.remove(tabId)
+        if (entry == null) {
+            addSystemMessage(tabId, "Disconnected")
+            return
+        }
         workspace.dispatch(WorkspaceCommand.WebSocketClosed(tabId, entry.connectionId, systemMessage = "Disconnected"))
         entry.job.cancel()
         entry.connection?.let { connection ->
@@ -223,17 +315,88 @@ class WebSocketManager(
 
     /** Closes connections whose tabs were closed or switched back to HTTP. */
     fun syncTabs(webSocketTabIds: Set<String>) {
-        active.keys.filterNot { it in webSocketTabIds }.forEach { tabId ->
-            val entry = active.remove(tabId) ?: return@forEach
-            workspace.dispatch(WorkspaceCommand.WebSocketClosed(tabId, entry.connectionId, systemMessage = "Disconnected"))
-            entry.job.cancel()
-            entry.connection?.let { connection ->
-                scope.launch { runCatching { connection.close() } }
+        (active.keys + reconnectJobs.keys + sessions.keys)
+            .filterNot { it in webSocketTabIds }
+            .forEach { tabId ->
+                reconnectJobs.remove(tabId)?.cancel()
+                reconnectAttempts.remove(tabId)
+                sessions.remove(tabId)
+                val entry = active.remove(tabId) ?: return@forEach
+                workspace.dispatch(WorkspaceCommand.WebSocketClosed(tabId, entry.connectionId, systemMessage = "Disconnected"))
+                entry.job.cancel()
+                entry.connection?.let { connection ->
+                    scope.launch { runCatching { connection.close() } }
+                }
             }
+    }
+
+    @Suppress("ReturnCount")
+    private fun scheduleReconnect(
+        tabId: String,
+        immediate: Boolean = false,
+    ) {
+        val state = workspace.state.value
+        if (state.isClosing) return
+        val tab = state.tabs.firstOrNull { it.id == tabId } ?: return
+        if (tab.request.protocol != RequestProtocol.WEBSOCKET) return
+        if (tab.webSocket?.autoReconnect != true) return
+        if (reconnectJobs.containsKey(tabId) || active.containsKey(tabId)) return
+        val session = sessions[tabId] ?: return
+
+        val attempt = (reconnectAttempts[tabId] ?: 0) + 1
+        if (attempt > maxReconnectAttempts) {
+            reconnectAttempts.remove(tabId)
+            addSystemMessage(tabId, "Reconnection stopped after $maxReconnectAttempts attempts")
+            return
         }
+        reconnectAttempts[tabId] = attempt
+
+        val delayMillis = if (immediate) 0L else reconnectDelayMillis(attempt)
+        addSystemMessage(
+            tabId,
+            if (delayMillis > 0) {
+                "Reconnecting in ${(delayMillis / 1_000).coerceAtLeast(1)}s (attempt $attempt/$maxReconnectAttempts)"
+            } else {
+                "Reconnecting (attempt $attempt/$maxReconnectAttempts)"
+            },
+        )
+        val job =
+            scope.launch {
+                try {
+                    if (delayMillis > 0) delay(delayMillis)
+                    val current =
+                        workspace.state.value.tabs
+                            .firstOrNull { it.id == tabId } ?: return@launch
+                    if (current.request.protocol != RequestProtocol.WEBSOCKET || current.webSocket?.autoReconnect != true) {
+                        return@launch
+                    }
+                    // Remove before connecting so connect() cannot cancel this job when it clears pending retries.
+                    reconnectJobs.remove(tabId)
+                    connect(tabId, session.request, session.context)
+                } finally {
+                    reconnectJobs.remove(tabId)
+                }
+            }
+        reconnectJobs[tabId] = job
+    }
+
+    private fun addSystemMessage(
+        tabId: String,
+        content: String,
+    ) {
+        workspace.dispatch(
+            WorkspaceCommand.WebSocketSystemMessage(
+                tabId,
+                WebSocketMessage(direction = WebSocketDirection.SYSTEM, content = content),
+            ),
+        )
     }
 
     suspend fun quiesce() {
+        reconnectJobs.values.forEach { it.cancel() }
+        reconnectJobs.clear()
+        sessions.clear()
+        reconnectAttempts.clear()
         val entries = active.entries.toList()
         active.clear()
         entries.forEach { (tabId, entry) ->
@@ -249,6 +412,10 @@ class WebSocketManager(
     }
 
     fun cleanup() {
+        reconnectJobs.values.forEach { it.cancel() }
+        reconnectJobs.clear()
+        sessions.clear()
+        reconnectAttempts.clear()
         active.values.forEach { entry ->
             entry.connection?.abort()
             entry.job.cancel()

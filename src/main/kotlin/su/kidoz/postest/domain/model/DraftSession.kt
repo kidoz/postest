@@ -18,4 +18,5 @@ data class DraftTab(
     val collectionItemId: String? = null,
     val response: HttpResponse? = null,
     val error: String? = null,
+    val webSocketMessages: List<WebSocketMessage> = emptyList(),
 )

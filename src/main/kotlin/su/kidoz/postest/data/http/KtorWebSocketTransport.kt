@@ -217,6 +217,10 @@ private class KtorWebSocketConnection(
         sendMutex.withLock { session.send(Frame.Text(text)) }
     }
 
+    override suspend fun sendBinary(bytes: ByteArray) {
+        sendMutex.withLock { session.send(Frame.Binary(true, bytes)) }
+    }
+
     override suspend fun close() {
         session.close(CloseReason(CloseReason.Codes.NORMAL, "Closed by user"))
     }

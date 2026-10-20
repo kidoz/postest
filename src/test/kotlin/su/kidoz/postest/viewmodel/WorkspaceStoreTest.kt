@@ -228,6 +228,52 @@ class WorkspaceStoreTest {
         )
     }
 
+    @Test fun `websocket transcripts restore and are capped when projected`() {
+        val wsTab = TabState(id = "ws", request = HttpRequest(protocol = RequestProtocol.WEBSOCKET), webSocket = WebSocketTabState())
+        val store = WorkspaceStore(WorkspaceState(tabs = listOf(wsTab), activeTabId = wsTab.id))
+        val filler = "a".repeat(300_000)
+        val messages = (1..5).map { WebSocketMessage(direction = WebSocketDirection.RECEIVED, content = "$it$filler") }
+        val withMessages = wsTab.copy(webSocket = WebSocketTabState(messages = messages, autoReconnect = true))
+        val draft =
+            WorkspaceState(tabs = listOf(withMessages), activeTabId = wsTab.id)
+                .toDraftSession()
+        val projected = draft.tabs.single().webSocketMessages
+
+        assertTrue(projected.size < messages.size)
+        assertTrue(projected.sumOf { it.content.toByteArray().size } <= MAX_PERSISTED_WEBSOCKET_TRANSCRIPT_BYTES)
+        assertTrue(projected.last().content.startsWith("5"))
+
+        store.dispatch(
+            WorkspaceCommand.Restore(
+                DraftSession(
+                    tabs = listOf(DraftTab("ws", HttpRequest(protocol = RequestProtocol.WEBSOCKET), false, webSocketMessages = projected)),
+                    activeTabId = "ws",
+                ),
+                store.state.value.toDraftSession(),
+            ),
+        )
+        assertEquals(
+            projected,
+            store.state.value.activeTab
+                ?.webSocket
+                ?.messages,
+        )
+    }
+
+    @Test fun `auto reconnect is a tab setting`() {
+        val wsTab = TabState(id = "ws", request = HttpRequest(protocol = RequestProtocol.WEBSOCKET), webSocket = WebSocketTabState())
+        val store = WorkspaceStore(WorkspaceState(tabs = listOf(wsTab), activeTabId = wsTab.id))
+
+        store.dispatch(WorkspaceCommand.WebSocketAutoReconnectChanged("ws", true))
+
+        assertEquals(
+            true,
+            store.state.value.activeTab
+                ?.webSocket
+                ?.autoReconnect,
+        )
+    }
+
     @Test fun `restored websocket tabs start disconnected`() {
         val store = store()
         store.dispatch(

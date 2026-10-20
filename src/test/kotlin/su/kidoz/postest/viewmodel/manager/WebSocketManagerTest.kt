@@ -7,6 +7,7 @@ import io.mockk.verify
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import su.kidoz.postest.domain.model.ExecutionContext
@@ -47,6 +48,10 @@ class WebSocketManagerTest {
             sent += text
         }
 
+        override suspend fun sendBinary(bytes: ByteArray) {
+            sent += "<binary:${bytes.size}>"
+        }
+
         override suspend fun close() {
             closed = true
         }
@@ -57,6 +62,10 @@ class WebSocketManagerTest {
 
         fun emit(event: WebSocketEvent) {
             incoming.trySend(event)
+        }
+
+        fun finish() {
+            incoming.close()
         }
     }
 
@@ -220,6 +229,95 @@ class WebSocketManagerTest {
             runCurrent()
 
             coVerify(exactly = 1) { connectWebSocketUseCase.connect(any(), any()) }
+            manager.cleanup()
+        }
+
+    @Test
+    fun `binary messages are sent and recorded`() =
+        runTest {
+            val connection = FakeConnection()
+            coEvery { connectWebSocketUseCase.connect(any(), any()) } returns Result.success(connection)
+            val workspace = store()
+            val manager = WebSocketManager(connectWebSocketUseCase, workspace, effects, this)
+            connect(workspace, manager)
+            runCurrent()
+
+            manager.sendBinary("tab", byteArrayOf(1, 2, 3))
+            runCurrent()
+
+            assertEquals(listOf("<binary:3>"), connection.sent)
+            assertEquals(
+                "Binary message sent (3 bytes)",
+                workspace.state.value.activeTab
+                    ?.webSocket
+                    ?.messages
+                    ?.last()
+                    ?.content,
+            )
+            manager.cleanup()
+        }
+
+    @Test
+    fun `auto reconnect retries after an unexpected close`() =
+        runTest {
+            val first = FakeConnection()
+            val second = FakeConnection()
+            coEvery { connectWebSocketUseCase.connect(any(), any()) } returnsMany
+                listOf(Result.success(first), Result.success(second))
+            val workspace = store()
+            val manager =
+                WebSocketManager(
+                    connectWebSocketUseCase,
+                    workspace,
+                    effects,
+                    this,
+                    reconnectDelayMillis = { 0 },
+                )
+            manager.setAutoReconnect("tab", true)
+            connect(workspace, manager)
+            advanceUntilIdle()
+
+            first.finish()
+            advanceUntilIdle()
+
+            coVerify(exactly = 2) { connectWebSocketUseCase.connect(any(), any()) }
+            assertEquals(
+                WebSocketStatus.CONNECTED,
+                workspace.state.value.activeTab
+                    ?.webSocket
+                    ?.status,
+            )
+            val contents =
+                workspace.state.value.activeTab
+                    ?.webSocket
+                    ?.messages
+                    ?.map { it.content }
+                    .orEmpty()
+            assertTrue(contents.any { it.startsWith("Reconnecting") })
+            assertTrue(contents.contains("Reconnected"))
+            manager.cleanup()
+        }
+
+    @Test
+    fun `auto reconnect does not run unless enabled`() =
+        runTest {
+            val connection = FakeConnection()
+            coEvery { connectWebSocketUseCase.connect(any(), any()) } returns Result.success(connection)
+            val workspace = store()
+            val manager = WebSocketManager(connectWebSocketUseCase, workspace, effects, this)
+            connect(workspace, manager)
+            advanceUntilIdle()
+
+            connection.finish()
+            advanceUntilIdle()
+
+            coVerify(exactly = 1) { connectWebSocketUseCase.connect(any(), any()) }
+            assertEquals(
+                WebSocketStatus.DISCONNECTED,
+                workspace.state.value.activeTab
+                    ?.webSocket
+                    ?.status,
+            )
             manager.cleanup()
         }
 }

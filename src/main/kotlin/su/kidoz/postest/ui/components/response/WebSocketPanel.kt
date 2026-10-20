@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -34,6 +35,8 @@ fun WebSocketPanel(
     onSendMessage: (String) -> Unit,
     onClearMessages: () -> Unit,
     modifier: Modifier = Modifier,
+    onAutoReconnectChange: (Boolean) -> Unit = {},
+    onSendBinary: () -> Unit = {},
 ) {
     var draft by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
@@ -60,6 +63,14 @@ fun WebSocketPanel(
                     style = MaterialTheme.typography.labelMedium,
                 )
                 Spacer(Modifier.weight(1f))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = state.autoReconnect,
+                        onCheckedChange = onAutoReconnectChange,
+                        modifier = Modifier.testTag("websocket-auto-reconnect"),
+                    )
+                    Text("Auto-reconnect", style = MaterialTheme.typography.labelMedium)
+                }
                 TextButton(
                     onClick = onClearMessages,
                     enabled = state.messages.isNotEmpty(),
@@ -136,6 +147,13 @@ fun WebSocketPanel(
                     minLines = 1,
                     maxLines = 4,
                 )
+                IconButton(
+                    onClick = onSendBinary,
+                    enabled = state.status == WebSocketStatus.CONNECTED,
+                    modifier = Modifier.testTag("websocket-send-binary"),
+                ) {
+                    Icon(Icons.Default.AttachFile, contentDescription = "Send binary file")
+                }
                 Button(
                     onClick = { sendDraft(state.status, draft, onSendMessage) { draft = "" } },
                     enabled = state.status == WebSocketStatus.CONNECTED && draft.isNotBlank(),

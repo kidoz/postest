@@ -15,6 +15,7 @@ import su.kidoz.postest.domain.model.WebSocketMessage
 import su.kidoz.postest.domain.model.WebSocketStatus
 import su.kidoz.postest.domain.model.WebSocketTabState
 import su.kidoz.postest.domain.model.limitBodyForStorage
+import su.kidoz.postest.domain.model.limitTranscriptForStorage
 
 /** Values with shared invariants are changed in one atomic workspace transition. */
 data class WorkspaceState(
@@ -92,8 +93,18 @@ sealed interface WorkspaceCommand {
         val systemMessage: String? = null,
     ) : WorkspaceCommand
 
+    data class WebSocketSystemMessage(
+        val tabId: String,
+        val message: WebSocketMessage,
+    ) : WorkspaceCommand
+
     data class WebSocketMessagesCleared(
         val tabId: String,
+    ) : WorkspaceCommand
+
+    data class WebSocketAutoReconnectChanged(
+        val tabId: String,
+        val enabled: Boolean,
     ) : WorkspaceCommand
 
     data class Restore(
@@ -231,8 +242,18 @@ class WorkspaceStore(
                 }
             }
 
+            is WorkspaceCommand.WebSocketSystemMessage -> {
+                current.mapTab(command.tabId) { tab ->
+                    tab.withWebSocket { it.copy(messages = it.messages.append(command.message)) }
+                }
+            }
+
             is WorkspaceCommand.WebSocketMessagesCleared -> {
                 current.mapTab(command.tabId) { tab -> tab.withWebSocket { it.copy(messages = emptyList()) } }
+            }
+
+            is WorkspaceCommand.WebSocketAutoReconnectChanged -> {
+                current.mapTab(command.tabId) { tab -> tab.withWebSocket { it.copy(autoReconnect = command.enabled) } }
             }
 
             is WorkspaceCommand.Restore -> {
@@ -267,7 +288,12 @@ class WorkspaceStore(
                     error = tab.error,
                     isDirty = tab.isDirty,
                     bodyDrafts = tab.bodyDrafts.associateBy { it::class },
-                    webSocket = if (tab.request.protocol == RequestProtocol.WEBSOCKET) WebSocketTabState() else null,
+                    webSocket =
+                        if (tab.request.protocol == RequestProtocol.WEBSOCKET) {
+                            WebSocketTabState(messages = tab.webSocketMessages.limitTranscriptForStorage())
+                        } else {
+                            null
+                        },
                 )
             }
         // Preserve edits accepted while the disk read was pending. Current values win on ID collisions.
@@ -332,6 +358,11 @@ fun WorkspaceState.toDraftSession(): DraftSession =
                     collectionItemId = tab.collectionItemId,
                     response = tab.response?.limitBodyForStorage(),
                     error = tab.error,
+                    webSocketMessages =
+                        tab.webSocket
+                            ?.messages
+                            ?.limitTranscriptForStorage()
+                            .orEmpty(),
                 )
             },
         activeTabId = activeTabId,

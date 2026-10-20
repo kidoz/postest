@@ -22,12 +22,14 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import su.kidoz.postest.domain.model.AuthConfig
 import su.kidoz.postest.domain.model.Environment
 import su.kidoz.postest.domain.model.EnvironmentSnapshot
 import su.kidoz.postest.domain.model.ExecutionContext
 import su.kidoz.postest.domain.model.HistoryEntry
 import su.kidoz.postest.domain.model.HttpRequest
+import su.kidoz.postest.domain.model.MAX_WEBSOCKET_BINARY_BYTES
 import su.kidoz.postest.domain.model.OAuth2Exception
 import su.kidoz.postest.domain.model.OAuth2GrantType
 import su.kidoz.postest.domain.model.OAuth2Token
@@ -339,6 +341,30 @@ class MainViewModel(
     fun clearWebSocketMessages() {
         val tab = tabManager.getActiveTab() ?: return
         if (tab.request.protocol == RequestProtocol.WEBSOCKET) webSocketManager.clearMessages(tab.id)
+    }
+
+    fun sendWebSocketBinary(file: File) {
+        val tab = tabManager.getActiveTab() ?: return
+        if (tab.request.protocol != RequestProtocol.WEBSOCKET) return
+        if (file.length() > MAX_WEBSOCKET_BINARY_BYTES) {
+            emit(AppSideEffect.ShowError("Binary message is too large"))
+            return
+        }
+        viewModelScope.launch {
+            val bytes = withContext(Dispatchers.IO) { runCatching { file.readBytes() }.getOrNull() }
+            if (bytes == null) {
+                emit(AppSideEffect.ShowError("File could not be read"))
+            } else {
+                webSocketManager.sendBinary(tab.id, bytes)
+            }
+        }
+    }
+
+    fun setWebSocketAutoReconnect(enabled: Boolean) {
+        val tab = tabManager.getActiveTab() ?: return
+        if (tab.request.protocol == RequestProtocol.WEBSOCKET) {
+            webSocketManager.setAutoReconnect(tab.id, enabled)
+        }
     }
 
     fun authorizeOAuth2() {

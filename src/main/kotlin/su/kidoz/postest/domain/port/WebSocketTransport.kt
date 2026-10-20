@@ -17,6 +17,8 @@ interface WebSocketConnection {
 
     suspend fun send(text: String)
 
+    suspend fun sendBinary(bytes: ByteArray)
+
     suspend fun close()
 
     /** Releases the connection without suspending; used during shutdown. */

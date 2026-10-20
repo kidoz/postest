@@ -10,6 +10,8 @@ import su.kidoz.postest.domain.model.HttpRequest
 import su.kidoz.postest.domain.model.HttpResponse
 import su.kidoz.postest.domain.model.RequestBody
 import su.kidoz.postest.domain.model.ResponseTime
+import su.kidoz.postest.domain.model.WebSocketDirection
+import su.kidoz.postest.domain.model.WebSocketMessage
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -51,7 +53,25 @@ class SessionRepositoryTest {
                 )
             val expected =
                 DraftSession(
-                    tabs = listOf(DraftTab("tab", request, true, bodies, response = response, error = "previous failure")),
+                    tabs =
+                        listOf(
+                            DraftTab(
+                                "tab",
+                                request,
+                                true,
+                                bodies,
+                                response = response,
+                                error = "previous failure",
+                                webSocketMessages =
+                                    listOf(
+                                        WebSocketMessage(
+                                            direction = WebSocketDirection.RECEIVED,
+                                            content = "hello",
+                                            timestamp = 123,
+                                        ),
+                                    ),
+                            ),
+                        ),
                     activeTabId = "tab",
                 )
             SessionRepository(database, TestDatabaseFactory.cipher()).save(expected)

@@ -83,6 +83,51 @@ class KtorWebSocketTransportIntegrationTest {
         }
 
     @Test
+    fun `sends binary frames`() =
+        runBlocking {
+            val server =
+                embeddedServer(CIO, host = "127.0.0.1", port = 0) {
+                    install(WebSockets)
+                    routing {
+                        webSocket("/binary") {
+                            for (frame in incoming) {
+                                if (frame is Frame.Binary) send(Frame.Text("binary:${frame.data.size}"))
+                            }
+                        }
+                    }
+                }.start(wait = false)
+            val client = HttpClientFactory.create()
+            val port =
+                server.engine
+                    .resolvedConnectors()
+                    .first()
+                    .port
+            val transport = KtorWebSocketTransport(client, VariableResolver())
+            val events = Channel<WebSocketEvent>(Channel.UNLIMITED)
+            try {
+                val connection =
+                    transport
+                        .connect(
+                            HttpRequest(protocol = RequestProtocol.WEBSOCKET, url = "ws://127.0.0.1:$port/binary"),
+                            ExecutionContext(),
+                        ).getOrThrow()
+                val collector = launch { connection.events.collect { events.send(it) } }
+                try {
+                    connection.sendBinary(byteArrayOf(1, 2, 3))
+                    val event = withTimeout(5_000) { events.receive() }
+                    assertTrue(event is WebSocketEvent.Text)
+                    assertEquals("binary:3", event.content)
+                } finally {
+                    collector.cancel()
+                    connection.close()
+                }
+            } finally {
+                client.close()
+                server.stop(gracePeriodMillis = 0, timeoutMillis = 1_000)
+            }
+        }
+
+    @Test
     fun `applies OAuth2 access tokens to the websocket handshake`() =
         runBlocking {
             val server =

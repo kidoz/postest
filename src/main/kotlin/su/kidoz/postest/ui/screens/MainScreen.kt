@@ -66,6 +66,18 @@ fun MainScreen(
         }
     }
 
+    // File picker for WebSocket binary messages
+    val openWebSocketBinaryDialog = {
+        val fileChooser =
+            JFileChooser().apply {
+                dialogTitle = "Send Binary Message"
+                isAcceptAllFileFilterUsed = true
+            }
+        if (fileChooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
+            viewModel.sendWebSocketBinary(fileChooser.selectedFile)
+        }
+    }
+
     // File picker for export
     val openExportDialog: (RequestCollection) -> Unit = { collection ->
         val suggestedName = "${collection.name.replace(Regex("[^a-zA-Z0-9_-]"), "_")}.postman_collection.json"
@@ -163,7 +175,11 @@ fun MainScreen(
                     )
                 },
                 rightContent = {
-                    RequestArea(state = state, viewModel = viewModel)
+                    RequestArea(
+                        state = state,
+                        viewModel = viewModel,
+                        onSendBinary = openWebSocketBinaryDialog,
+                    )
                 },
             )
 
@@ -366,6 +382,7 @@ private fun TopAppBar(
 private fun RequestArea(
     state: AppState,
     viewModel: MainViewModel,
+    onSendBinary: () -> Unit,
 ) {
     val activeTab = state.activeTab
 
@@ -395,6 +412,8 @@ private fun RequestArea(
                         state = webSocket ?: WebSocketTabState(),
                         onSendMessage = { viewModel.sendWebSocketMessage(it) },
                         onClearMessages = { viewModel.clearWebSocketMessages() },
+                        onAutoReconnectChange = { viewModel.setWebSocketAutoReconnect(it) },
+                        onSendBinary = onSendBinary,
                         modifier = Modifier.fillMaxSize(),
                     )
                 } else {

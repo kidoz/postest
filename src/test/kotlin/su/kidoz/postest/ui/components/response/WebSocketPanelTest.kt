@@ -69,6 +69,30 @@ class WebSocketPanelTest {
             onNodeWithText("Connect to start exchanging messages.").assertExists()
             onNodeWithTag("websocket-message-input").performTextInput("blocked")
             onNodeWithTag("websocket-send").assertIsNotEnabled()
+            onNodeWithTag("websocket-send-binary").assertIsNotEnabled()
+        }
+
+    @Test
+    fun `auto reconnect and binary send controls are wired`() =
+        runComposeUiTest {
+            var autoReconnect: Boolean? = null
+            var binarySent = false
+            setContent {
+                AppTheme {
+                    WebSocketPanel(
+                        state = WebSocketTabState(status = WebSocketStatus.CONNECTED),
+                        onSendMessage = {},
+                        onClearMessages = {},
+                        onAutoReconnectChange = { autoReconnect = it },
+                        onSendBinary = { binarySent = true },
+                    )
+                }
+            }
+
+            onNodeWithTag("websocket-auto-reconnect").performClick()
+            runOnIdle { assertEquals(true, autoReconnect) }
+            onNodeWithTag("websocket-send-binary").assertIsEnabled().performClick()
+            runOnIdle { assertTrue(binarySent) }
         }
 
     @Test
