@@ -1,11 +1,10 @@
 package su.kidoz.postest.data.repository
 
+import app.cash.sqldelight.coroutines.asFlow
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -15,21 +14,25 @@ import su.kidoz.postest.domain.model.HttpRequest
 import su.kidoz.postest.domain.model.HttpResponse
 import su.kidoz.postest.domain.model.limitBodyForStorage
 import java.util.UUID
+import su.kidoz.postest.domain.port.HistoryRepository as HistoryRepositoryPort
 
 private val logger = KotlinLogging.logger {}
 
 class HistoryRepository(
     private val database: PostestDatabase,
-) {
+) : HistoryRepositoryPort {
     private val json = Json { ignoreUnknownKeys = true }
-    private val _history = MutableStateFlow<List<HistoryEntry>>(emptyList())
-    val history: Flow<List<HistoryEntry>> = _history.asStateFlow()
+    override val history: Flow<List<HistoryEntry>> =
+        database.postestQueries
+            .selectAllHistory()
+            .asFlow()
+            .map { loadHistory() }
 
     /**
      * Initial load of history from database.
      * Called once at startup.
      */
-    suspend fun loadHistory() =
+    override suspend fun loadHistory() =
         withContext(Dispatchers.IO) {
             val dbHistory = database.postestQueries.selectAllHistory().executeAsList()
             val result =
@@ -44,61 +47,54 @@ class HistoryRepository(
                             timestamp = dbEntry.timestamp,
                         )
                     }.getOrElse { error ->
-                        logger.warn(error) { "Skipping corrupted history entry ${dbEntry.id}" }
+                        logger.warn { "Skipping corrupted history entry ${dbEntry.id}" }
                         null
                     }
                 }
-            _history.value = result
             result
         }
 
     /**
      * Adds a history entry.
-     * Uses incremental update - prepends to existing list instead of full reload.
+     * Observers read the committed database state.
      */
-    suspend fun addHistoryEntry(entry: HistoryEntry) =
+    override suspend fun addHistoryEntry(entry: HistoryEntry) {
         withContext(Dispatchers.IO) {
             val entryId = entry.id.ifBlank { UUID.randomUUID().toString() }
             val entryWithId = if (entry.id.isBlank()) entry.copy(id = entryId) else entry
             val storedEntry = entryWithId.copy(response = entryWithId.response?.limitBodyForStorage())
 
-            database.postestQueries.insertHistoryEntry(
-                id = entryId,
-                request_json = json.encodeToString(storedEntry.request),
-                response_json = storedEntry.response?.let { json.encodeToString(it) },
-                error_message = storedEntry.errorMessage,
-                duration = storedEntry.duration,
-                timestamp = storedEntry.timestamp,
-            )
-            database.postestQueries.deleteOldHistory()
-
-            // Incremental update: prepend new entry (history is ordered newest first)
-            _history.update { currentHistory ->
-                (listOf(storedEntry) + currentHistory).take(200)
+            database.transaction {
+                database.postestQueries.insertHistoryEntry(
+                    id = entryId,
+                    request_json = json.encodeToString(storedEntry.request),
+                    response_json = storedEntry.response?.let { json.encodeToString(it) },
+                    error_message = storedEntry.errorMessage,
+                    duration = storedEntry.duration,
+                    timestamp = storedEntry.timestamp,
+                )
+                database.postestQueries.deleteOldHistory()
             }
         }
+    }
 
     /**
      * Deletes a history entry.
-     * Uses incremental update - filters out the entry instead of full reload.
+     * Observers read the committed database state.
      */
-    suspend fun deleteHistoryEntry(entryId: String) =
+    override suspend fun deleteHistoryEntry(entryId: String) {
         withContext(Dispatchers.IO) {
             database.postestQueries.deleteHistoryEntry(entryId)
-
-            // Incremental update: remove the deleted entry
-            _history.update { currentHistory ->
-                currentHistory.filter { it.id != entryId }
-            }
         }
+    }
 
     /**
      * Clears all history.
-     * Already optimized - just clears the in-memory list.
+     * Observers read the committed database state.
      */
-    suspend fun clearHistory() =
+    override suspend fun clearHistory() {
         withContext(Dispatchers.IO) {
             database.postestQueries.clearHistory()
-            _history.value = emptyList()
         }
+    }
 }

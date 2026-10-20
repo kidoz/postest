@@ -1,11 +1,9 @@
 package su.kidoz.postest.data.repository
 
-import io.github.oshai.kotlinlogging.KotlinLogging
+import app.cash.sqldelight.coroutines.asFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -16,135 +14,72 @@ import su.kidoz.postest.domain.model.HttpRequest
 import su.kidoz.postest.domain.model.RequestCollection
 import su.kidoz.postest.domain.model.Variable
 import java.util.UUID
+import su.kidoz.postest.domain.port.CollectionRepository as CollectionRepositoryPort
 
-private val logger = KotlinLogging.logger {}
-
+/** SQLite owns saved collections; observers always rebuild from committed rows. */
 class CollectionRepository(
     private val database: PostestDatabase,
-) {
+) : CollectionRepositoryPort {
+    private val queries = database.postestQueries
     private val json = Json { ignoreUnknownKeys = true }
+    override val collections: Flow<List<RequestCollection>> = queries.observeCollectionChanges().asFlow().map { loadCollections() }
 
-    private fun encodeVariables(variables: List<Variable>): String? = variables.takeIf { it.isNotEmpty() }?.let { json.encodeToString(it) }
-
-    private val _collections = MutableStateFlow<List<RequestCollection>>(emptyList())
-    val collections: Flow<List<RequestCollection>> = _collections.asStateFlow()
-
-    /**
-     * Applies an incremental change and keeps the in-memory order aligned with
-     * [loadCollections], which orders by `updated_at` descending.
-     */
-    private fun updateCollections(transform: (List<RequestCollection>) -> List<RequestCollection>) {
-        _collections.update { currentList ->
-            transform(currentList).sortedByDescending { it.updatedAt }
-        }
-    }
-
-    suspend fun loadCollections() =
+    override suspend fun loadCollections(): List<RequestCollection> =
         withContext(Dispatchers.IO) {
-            val dbCollections = database.postestQueries.selectAllCollections().executeAsList()
-            val result =
-                dbCollections.map { dbCollection ->
-                    val items = loadCollectionItems(dbCollection.id, null)
+            database.transactionWithResult {
+                val children = queries.selectAllCollectionItems().executeAsList().groupBy { it.parent_folder_id }
+
+                fun items(
+                    collectionId: String,
+                    parentId: String?,
+                ): List<CollectionItem> =
+                    children[parentId].orEmpty().filter { it.collection_id == collectionId }.map { row ->
+                        when (row.type) {
+                            "request" -> {
+                                CollectionItem.Request(
+                                    id = row.id,
+                                    name = row.name,
+                                    request = row.request_json?.let { json.decodeFromString<HttpRequest>(it) } ?: HttpRequest(),
+                                )
+                            }
+
+                            "folder" -> {
+                                CollectionItem.Folder(
+                                    id = row.id,
+                                    name = row.name,
+                                    description = row.description,
+                                    items = items(collectionId, row.id),
+                                )
+                            }
+
+                            else -> {
+                                error("Unknown collection item type")
+                            }
+                        }
+                    }
+                queries.selectAllCollections().executeAsList().map { row ->
                     RequestCollection(
-                        id = dbCollection.id,
-                        name = dbCollection.name,
-                        description = dbCollection.description,
-                        items = items,
-                        variables = dbCollection.variables_json?.let { json.decodeFromString<List<Variable>>(it) } ?: emptyList(),
-                        auth = dbCollection.auth_json?.let { json.decodeFromString<AuthConfig>(it) },
-                        createdAt = dbCollection.created_at,
-                        updatedAt = dbCollection.updated_at,
+                        id = row.id,
+                        name = row.name,
+                        description = row.description,
+                        items = items(row.id, null),
+                        variables = row.variables_json?.let { json.decodeFromString<List<Variable>>(it) }.orEmpty(),
+                        auth = row.auth_json?.let { json.decodeFromString<AuthConfig>(it) },
+                        createdAt = row.created_at,
+                        updatedAt = row.updated_at,
                     )
-                }
-            _collections.value = result
-            result
-        }
-
-    private fun loadCollectionItems(
-        collectionId: String,
-        parentFolderId: String?,
-    ): List<CollectionItem> {
-        val dbItems =
-            if (parentFolderId == null) {
-                database.postestQueries.selectRootItemsByCollectionId(collectionId).executeAsList()
-            } else {
-                database.postestQueries.selectItemsByParentFolderId(parentFolderId).executeAsList()
-            }
-
-        return dbItems.map { dbItem ->
-            when (dbItem.type) {
-                "request" -> {
-                    val request =
-                        dbItem.request_json?.let { json.decodeFromString<HttpRequest>(it) }
-                            ?: HttpRequest()
-                    CollectionItem.Request(
-                        id = dbItem.id,
-                        name = dbItem.name,
-                        request = request,
-                    )
-                }
-
-                "folder" -> {
-                    val children = loadCollectionItems(collectionId, dbItem.id)
-                    CollectionItem.Folder(
-                        id = dbItem.id,
-                        name = dbItem.name,
-                        description = dbItem.description,
-                        items = children,
-                    )
-                }
-
-                else -> {
-                    logger.error { "Unknown collection item type: ${dbItem.type} for item ${dbItem.id}" }
-                    throw IllegalStateException("Unknown collection item type: ${dbItem.type}")
                 }
             }
         }
-    }
 
-    /**
-     * Creates a new collection.
-     * Uses incremental update - appends to existing list instead of full reload.
-     */
-    suspend fun createCollection(
+    override suspend fun createCollection(
         name: String,
-        description: String = "",
-    ): RequestCollection =
+        description: String,
+    ): RequestCollection = importCollection(RequestCollection(name = name, description = description))
+
+    override suspend fun updateCollection(collection: RequestCollection) {
         withContext(Dispatchers.IO) {
-            val collection =
-                RequestCollection(
-                    id = UUID.randomUUID().toString(),
-                    name = name,
-                    description = description,
-                    createdAt = System.currentTimeMillis(),
-                    updatedAt = System.currentTimeMillis(),
-                )
-
-            database.postestQueries.insertCollection(
-                id = collection.id,
-                name = collection.name,
-                description = collection.description,
-                auth_json = collection.auth?.let { json.encodeToString(it) },
-                variables_json = encodeVariables(collection.variables),
-                created_at = collection.createdAt,
-                updated_at = collection.updatedAt,
-            )
-
-            // Incremental update: append new collection
-            updateCollections { currentList ->
-                currentList + collection
-            }
-
-            collection
-        }
-
-    /**
-     * Updates an existing collection.
-     * Uses incremental update - replaces the specific collection instead of full reload.
-     */
-    suspend fun updateCollection(collection: RequestCollection) =
-        withContext(Dispatchers.IO) {
-            database.postestQueries.updateCollection(
+            queries.updateCollection(
                 id = collection.id,
                 name = collection.name,
                 description = collection.description,
@@ -152,261 +87,116 @@ class CollectionRepository(
                 variables_json = encodeVariables(collection.variables),
                 updated_at = System.currentTimeMillis(),
             )
-
-            // Incremental update: replace the updated collection
-            updateCollections { currentList ->
-                currentList.map { c ->
-                    if (c.id == collection.id) collection else c
-                }
-            }
         }
+    }
 
-    /**
-     * Deletes a collection.
-     * Uses incremental update - filters out the collection instead of full reload.
-     */
-    suspend fun deleteCollection(collectionId: String) =
+    override suspend fun deleteCollection(collectionId: String) {
         withContext(Dispatchers.IO) {
-            database.postestQueries.deleteCollection(collectionId)
-
-            // Incremental update: remove the deleted collection
-            updateCollections { currentList ->
-                currentList.filter { it.id != collectionId }
-            }
-        }
-
-    /**
-     * Renames a collection.
-     * Uses incremental update - updates the specific collection instead of full reload.
-     */
-    suspend fun renameCollection(
-        collectionId: String,
-        newName: String,
-    ) = withContext(Dispatchers.IO) {
-        val updatedAt = System.currentTimeMillis()
-        database.postestQueries.renameCollection(newName, updatedAt, collectionId)
-
-        // Incremental update: update the collection name
-        _collections.update { currentList ->
-            currentList.map { c ->
-                if (c.id == collectionId) c.copy(name = newName, updatedAt = updatedAt) else c
+            // Explicit child deletion also works with drivers configured without foreign-key enforcement.
+            database.transaction {
+                queries.deleteItemsByCollectionId(collectionId)
+                queries.deleteCollection(collectionId)
             }
         }
     }
 
-    /**
-     * Adds a request to a collection.
-     * Uses incremental update - adds to nested structure instead of full reload.
-     */
-    suspend fun addRequestToCollection(
+    override suspend fun renameCollection(
+        collectionId: String,
+        newName: String,
+    ) {
+        withContext(Dispatchers.IO) {
+            queries.renameCollection(newName, System.currentTimeMillis(), collectionId)
+        }
+    }
+
+    override suspend fun addRequestToCollection(
         collectionId: String,
         request: HttpRequest,
         name: String,
-        parentFolderId: String? = null,
+        parentFolderId: String?,
     ): CollectionItem.Request =
         withContext(Dispatchers.IO) {
-            val item =
-                CollectionItem.Request(
-                    id = UUID.randomUUID().toString(),
-                    name = name,
-                    request = request,
-                )
-
-            val position =
-                database.postestQueries
-                    .selectItemsByCollectionId(collectionId)
-                    .executeAsList()
-                    .size
-
-            val updatedAt = System.currentTimeMillis()
-            database.postestQueries.insertCollectionItem(
-                id = item.id,
-                collection_id = collectionId,
-                parent_folder_id = parentFolderId,
-                type = "request",
-                name = item.name,
-                description = "",
-                request_json = json.encodeToString(request),
-                position = position.toLong(),
-            )
-            database.postestQueries.touchCollection(updatedAt, collectionId)
-
-            // Incremental update: add item to collection's nested structure
-            updateCollections { currentList ->
-                currentList.map { c ->
-                    if (c.id == collectionId) {
-                        c.copy(
-                            items = addItemToCollection(c.items, item, parentFolderId),
-                            updatedAt = updatedAt,
-                        )
-                    } else {
-                        c
-                    }
-                }
+            val item = CollectionItem.Request(name = name, request = request)
+            database.transaction {
+                validateParent(collectionId, parentFolderId)
+                insertItems(collectionId, listOf(item), parentFolderId, nextSiblingPosition(collectionId, parentFolderId))
+                queries.touchCollection(System.currentTimeMillis(), collectionId)
             }
-
             item
         }
 
-    /**
-     * Adds a folder to a collection.
-     * Uses incremental update - adds to nested structure instead of full reload.
-     */
-    suspend fun addFolderToCollection(
+    override suspend fun addFolderToCollection(
         collectionId: String,
         name: String,
-        description: String = "",
-        parentFolderId: String? = null,
+        description: String,
+        parentFolderId: String?,
     ): CollectionItem.Folder =
         withContext(Dispatchers.IO) {
-            val folder =
-                CollectionItem.Folder(
-                    id = UUID.randomUUID().toString(),
-                    name = name,
-                    description = description,
-                )
-
-            val position =
-                database.postestQueries
-                    .selectItemsByCollectionId(collectionId)
-                    .executeAsList()
-                    .size
-
-            val updatedAt = System.currentTimeMillis()
-            database.postestQueries.insertCollectionItem(
-                id = folder.id,
-                collection_id = collectionId,
-                parent_folder_id = parentFolderId,
-                type = "folder",
-                name = folder.name,
-                description = description,
-                request_json = null,
-                position = position.toLong(),
-            )
-            database.postestQueries.touchCollection(updatedAt, collectionId)
-
-            // Incremental update: add folder to collection's nested structure
-            updateCollections { currentList ->
-                currentList.map { c ->
-                    if (c.id == collectionId) {
-                        c.copy(
-                            items = addItemToCollection(c.items, folder, parentFolderId),
-                            updatedAt = updatedAt,
-                        )
-                    } else {
-                        c
-                    }
-                }
+            val folder = CollectionItem.Folder(name = name, description = description)
+            database.transaction {
+                validateParent(collectionId, parentFolderId)
+                insertItems(collectionId, listOf(folder), parentFolderId, nextSiblingPosition(collectionId, parentFolderId))
+                queries.touchCollection(System.currentTimeMillis(), collectionId)
             }
-
             folder
         }
 
-    /**
-     * Moves a collection item (request or folder) into [targetFolderId],
-     * or to the collection root when [targetFolderId] is null.
-     * No-op when the item is already in the target location or the move would create a cycle.
-     */
-    suspend fun moveCollectionItem(
+    override suspend fun moveCollectionItem(
         itemId: String,
         targetFolderId: String?,
     ): Boolean =
         withContext(Dispatchers.IO) {
-            val item =
-                database.postestQueries.selectCollectionItemById(itemId).executeAsOneOrNull()
-                    ?: return@withContext false
-            if (item.parent_folder_id == targetFolderId) return@withContext false
-
-            val collectionId = item.collection_id
-            if (targetFolderId != null) {
-                val target =
-                    database.postestQueries.selectCollectionItemById(targetFolderId).executeAsOneOrNull()
-                        ?: return@withContext false
-                if (target.collection_id != collectionId || target.type != "folder") return@withContext false
-                if (isSelfOrDescendant(targetFolderId, itemId)) return@withContext false
-            }
-
-            val targetPosition = nextSiblingPosition(collectionId, targetFolderId)
-            val updatedAt = System.currentTimeMillis()
-            database.postestQueries.moveCollectionItem(targetFolderId, targetPosition, itemId)
-            database.postestQueries.touchCollection(updatedAt, collectionId)
-
-            // Incremental update: move item to the end of the target folder (or collection root)
-            updateCollections { currentList ->
-                currentList.map { c ->
-                    if (c.id == collectionId) {
-                        c.copy(items = moveItemToParent(c.items, itemId, targetFolderId), updatedAt = updatedAt)
-                    } else {
-                        c
+            database.transactionWithResult {
+                val item = queries.selectCollectionItemById(itemId).executeAsOneOrNull() ?: return@transactionWithResult false
+                if (item.parent_folder_id == targetFolderId) return@transactionWithResult false
+                if (targetFolderId != null) {
+                    val target =
+                        queries.selectCollectionItemById(targetFolderId).executeAsOneOrNull()
+                            ?: return@transactionWithResult false
+                    if (target.collection_id != item.collection_id || target.type != "folder" ||
+                        isSelfOrDescendant(targetFolderId, itemId)
+                    ) {
+                        return@transactionWithResult false
                     }
                 }
+                queries.moveCollectionItem(targetFolderId, nextSiblingPosition(item.collection_id, targetFolderId), itemId)
+                queries.touchCollection(System.currentTimeMillis(), item.collection_id)
+                true
             }
-
-            true
         }
 
-    /**
-     * Deletes a collection item (request or folder).
-     * Uses incremental update - removes from nested structure instead of full reload.
-     */
-    suspend fun deleteCollectionItem(itemId: String) =
+    override suspend fun deleteCollectionItem(itemId: String) {
         withContext(Dispatchers.IO) {
-            val item = database.postestQueries.selectCollectionItemById(itemId).executeAsOneOrNull()
-            database.postestQueries.deleteCollectionItem(itemId)
-            val updatedAt = System.currentTimeMillis()
-            item?.let { database.postestQueries.touchCollection(updatedAt, it.collection_id) }
+            database.transaction {
+                val item = queries.selectCollectionItemById(itemId).executeAsOneOrNull()
 
-            // Incremental update: remove item from all collections' nested structures
-            updateCollections { currentList ->
-                currentList.map { c ->
-                    val newItems = removeItemFromCollection(c.items, itemId)
-                    if (newItems != c.items) {
-                        c.copy(items = newItems, updatedAt = updatedAt)
-                    } else {
-                        c
-                    }
+                fun deleteTree(id: String) {
+                    queries.selectItemsByParentFolderId(id).executeAsList().forEach { deleteTree(it.id) }
+                    queries.deleteCollectionItem(id)
                 }
-            }
-        }
-
-    /**
-     * Renames a collection item (request or folder).
-     * Uses incremental update - updates in nested structure instead of full reload.
-     */
-    suspend fun renameCollectionItem(
-        itemId: String,
-        newName: String,
-    ) = withContext(Dispatchers.IO) {
-        val item = database.postestQueries.selectCollectionItemById(itemId).executeAsOneOrNull()
-        database.postestQueries.renameCollectionItem(newName, itemId)
-        val updatedAt = System.currentTimeMillis()
-        item?.let { database.postestQueries.touchCollection(updatedAt, it.collection_id) }
-
-        // Incremental update: rename item in all collections' nested structures
-        updateCollections { currentList ->
-            currentList.map { c ->
-                val newItems = renameItemInCollection(c.items, itemId, newName)
-                if (newItems != c.items) {
-                    c.copy(items = newItems, updatedAt = updatedAt)
-                } else {
-                    c
-                }
+                deleteTree(itemId)
+                item?.let { queries.touchCollection(System.currentTimeMillis(), it.collection_id) }
             }
         }
     }
 
-    /**
-     * Import a complete collection including all nested items.
-     * Used for importing collections from external formats (e.g., Postman).
-     * Uses incremental update - appends to existing list instead of full reload.
-     */
-    suspend fun importCollection(collection: RequestCollection): RequestCollection =
+    override suspend fun renameCollectionItem(
+        itemId: String,
+        newName: String,
+    ) {
         withContext(Dispatchers.IO) {
-            logger.info { "Importing collection '${collection.name}' with ${collection.items.size} top-level items" }
-
-            // Persist the collection and all children atomically
             database.transaction {
-                database.postestQueries.insertCollection(
+                val item = queries.selectCollectionItemById(itemId).executeAsOneOrNull()
+                queries.renameCollectionItem(newName, itemId)
+                item?.let { queries.touchCollection(System.currentTimeMillis(), it.collection_id) }
+            }
+        }
+    }
+
+    override suspend fun importCollection(collection: RequestCollection): RequestCollection =
+        withContext(Dispatchers.IO) {
+            database.transaction {
+                queries.insertCollection(
                     id = collection.id,
                     name = collection.name,
                     description = collection.description,
@@ -415,198 +205,68 @@ class CollectionRepository(
                     created_at = collection.createdAt,
                     updated_at = collection.updatedAt,
                 )
-                insertItemsRecursively(collection.id, collection.items, parentFolderId = null)
+                insertItems(collection.id, collection.items, null)
             }
-
-            // Incremental update: append imported collection
-            updateCollections { currentList ->
-                currentList + collection
-            }
-
             collection
         }
 
-    private fun insertItemsRecursively(
+    private fun encodeVariables(variables: List<Variable>): String? = variables.takeIf { it.isNotEmpty() }?.let { json.encodeToString(it) }
+
+    private fun insertItems(
         collectionId: String,
         items: List<CollectionItem>,
-        parentFolderId: String?,
+        parentId: String?,
+        firstPosition: Long = 0,
     ) {
         items.forEachIndexed { index, item ->
-            when (item) {
-                is CollectionItem.Request -> {
-                    database.postestQueries.insertCollectionItem(
-                        id = item.id,
-                        collection_id = collectionId,
-                        parent_folder_id = parentFolderId,
-                        type = "request",
-                        name = item.name,
-                        description = "",
-                        request_json = json.encodeToString(item.request),
-                        position = index.toLong(),
-                    )
-                }
-
-                is CollectionItem.Folder -> {
-                    database.postestQueries.insertCollectionItem(
-                        id = item.id,
-                        collection_id = collectionId,
-                        parent_folder_id = parentFolderId,
-                        type = "folder",
-                        name = item.name,
-                        description = item.description,
-                        request_json = null,
-                        position = index.toLong(),
-                    )
-                    // Recursively insert children
-                    insertItemsRecursively(collectionId, item.items, parentFolderId = item.id)
-                }
-            }
+            queries.insertCollectionItem(
+                id = item.id,
+                collection_id = collectionId,
+                parent_folder_id = parentId,
+                type = if (item is CollectionItem.Folder) "folder" else "request",
+                name = item.name,
+                description = (item as? CollectionItem.Folder)?.description.orEmpty(),
+                request_json = (item as? CollectionItem.Request)?.request?.let { json.encodeToString(it) },
+                position = firstPosition + index,
+            )
+            if (item is CollectionItem.Folder) insertItems(collectionId, item.items, item.id)
         }
     }
 
-    // ========== Helper functions for incremental updates on nested structures ==========
-
-    /**
-     * Adds an item to a collection's nested structure.
-     * If parentFolderId is null, adds to root level.
-     * If parentFolderId is specified, adds inside that folder.
-     */
-    private fun addItemToCollection(
-        items: List<CollectionItem>,
-        newItem: CollectionItem,
-        parentFolderId: String?,
-    ): List<CollectionItem> =
-        if (parentFolderId == null) {
-            // Add to root level
-            items + newItem
-        } else {
-            // Find the parent folder and add to it
-            items.map { item ->
-                when (item) {
-                    is CollectionItem.Folder -> {
-                        if (item.id == parentFolderId) {
-                            item.copy(items = item.items + newItem)
-                        } else {
-                            item.copy(items = addItemToCollection(item.items, newItem, parentFolderId))
-                        }
-                    }
-
-                    is CollectionItem.Request -> {
-                        item
-                    }
-                }
-            }
+    private fun validateParent(
+        collectionId: String,
+        parentId: String?,
+    ) {
+        require(queries.selectCollectionById(collectionId).executeAsOneOrNull() != null) { "Collection does not exist" }
+        if (parentId != null) {
+            val parent = queries.selectCollectionItemById(parentId).executeAsOneOrNull()
+            require(parent?.collection_id == collectionId && parent.type == "folder") { "Invalid parent folder" }
         }
-
-    /**
-     * Moves an item to the end of its target folder, or to the collection root.
-     * Returns the original list when the item is missing.
-     */
-    private fun moveItemToParent(
-        items: List<CollectionItem>,
-        itemId: String,
-        targetFolderId: String?,
-    ): List<CollectionItem> {
-        val item = findItem(items, itemId) ?: return items
-        val withoutItem = removeItemFromCollection(items, itemId)
-        return addItemToCollection(withoutItem, item, targetFolderId)
     }
 
-    /**
-     * Returns the position after the last child of [parentFolderId],
-     * or after the last root item when [parentFolderId] is null.
-     */
     private fun nextSiblingPosition(
         collectionId: String,
         parentFolderId: String?,
     ): Long {
         val siblings =
             if (parentFolderId == null) {
-                database.postestQueries.selectRootItemsByCollectionId(collectionId)
+                queries.selectRootItemsByCollectionId(collectionId)
             } else {
-                database.postestQueries.selectItemsByParentFolderId(parentFolderId)
+                queries.selectItemsByParentFolderId(parentFolderId)
             }
         return (siblings.executeAsList().maxOfOrNull { it.position } ?: -1L) + 1L
     }
 
-    /**
-     * Returns true when [folderId] is [itemId] itself or one of its descendants.
-     * Used to reject moving a folder into its own subtree.
-     */
     private fun isSelfOrDescendant(
         folderId: String,
         itemId: String,
     ): Boolean {
         var current: String? = folderId
+        val visited = mutableSetOf<String>()
         while (current != null) {
-            if (current == itemId) return true
-            current =
-                database.postestQueries
-                    .selectCollectionItemById(current)
-                    .executeAsOneOrNull()
-                    ?.parent_folder_id
+            if (current == itemId || !visited.add(current)) return true
+            current = queries.selectCollectionItemById(current).executeAsOneOrNull()?.parent_folder_id
         }
         return false
     }
-
-    /**
-     * Finds an item in a collection's nested structure by ID.
-     */
-    private fun findItem(
-        items: List<CollectionItem>,
-        itemId: String,
-    ): CollectionItem? =
-        items.firstNotNullOfOrNull { item ->
-            when (item) {
-                is CollectionItem.Request -> item.takeIf { it.id == itemId }
-                is CollectionItem.Folder -> if (item.id == itemId) item else findItem(item.items, itemId)
-            }
-        }
-
-    /**
-     * Removes an item from a collection's nested structure by ID.
-     * Recursively searches through folders.
-     */
-    private fun removeItemFromCollection(
-        items: List<CollectionItem>,
-        itemId: String,
-    ): List<CollectionItem> =
-        items
-            .filter { it.id != itemId }
-            .map { item ->
-                when (item) {
-                    is CollectionItem.Folder -> {
-                        item.copy(items = removeItemFromCollection(item.items, itemId))
-                    }
-
-                    is CollectionItem.Request -> {
-                        item
-                    }
-                }
-            }
-
-    /**
-     * Renames an item in a collection's nested structure by ID.
-     * Recursively searches through folders.
-     */
-    private fun renameItemInCollection(
-        items: List<CollectionItem>,
-        itemId: String,
-        newName: String,
-    ): List<CollectionItem> =
-        items.map { item ->
-            when (item) {
-                is CollectionItem.Request -> {
-                    if (item.id == itemId) item.copy(name = newName) else item
-                }
-
-                is CollectionItem.Folder -> {
-                    if (item.id == itemId) {
-                        item.copy(name = newName)
-                    } else {
-                        item.copy(items = renameItemInCollection(item.items, itemId, newName))
-                    }
-                }
-            }
-        }
 }

@@ -150,7 +150,7 @@ DELETE FROM EnvironmentVariable WHERE environment_id = ?;
 
 -- History Queries
 selectAllHistory:
-SELECT * FROM HistoryEntry ORDER BY timestamp DESC LIMIT 100;
+SELECT * FROM HistoryEntry ORDER BY timestamp DESC LIMIT 200;
 
 insertHistoryEntry:
 INSERT INTO HistoryEntry(id, request_json, response_json, error_message, duration, timestamp)
@@ -183,3 +183,19 @@ SELECT 'backup', snapshot_json FROM WorkspaceSession WHERE id = 'current';
 
 selectWorkspaceSessionBackup:
 SELECT snapshot_json FROM WorkspaceSession WHERE id = 'backup';
+
+-- Observe every table contributing to each aggregate, including child-only writes.
+observeCollectionChanges:
+SELECT (SELECT COUNT(*) FROM Collection), (SELECT COUNT(*) FROM CollectionItem);
+
+selectAllCollectionItems:
+SELECT * FROM CollectionItem ORDER BY position;
+
+deleteItemsByCollectionId:
+DELETE FROM CollectionItem WHERE collection_id = ?;
+
+observeEnvironmentChanges:
+SELECT (SELECT COUNT(*) FROM Environment), (SELECT COUNT(*) FROM EnvironmentVariable);
+
+selectAllEnvironmentVariables:
+SELECT * FROM EnvironmentVariable;
