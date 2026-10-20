@@ -29,8 +29,10 @@ import su.kidoz.postest.domain.model.HistoryEntry
 import su.kidoz.postest.domain.model.HttpRequest
 import su.kidoz.postest.domain.model.RequestBody
 import su.kidoz.postest.domain.model.RequestCollection
+import su.kidoz.postest.domain.model.RequestProtocol
 import su.kidoz.postest.domain.model.containsItem
 import su.kidoz.postest.domain.port.StorageAccessException
+import su.kidoz.postest.domain.usecase.ConnectWebSocketUseCase
 import su.kidoz.postest.domain.usecase.ExecuteRequestUseCase
 import su.kidoz.postest.domain.usecase.ExportCollectionUseCase
 import su.kidoz.postest.domain.usecase.ImportCollectionUseCase
@@ -45,6 +47,7 @@ import su.kidoz.postest.viewmodel.manager.ImportExportManager
 import su.kidoz.postest.viewmodel.manager.RequestExecutionManager
 import su.kidoz.postest.viewmodel.manager.SessionManager
 import su.kidoz.postest.viewmodel.manager.TabManager
+import su.kidoz.postest.viewmodel.manager.WebSocketManager
 import java.io.File
 import java.util.UUID
 import kotlin.reflect.KClass
@@ -62,6 +65,7 @@ data class TabState(
     val isDirty: Boolean = false,
     val error: String? = null,
     val bodyDrafts: Map<KClass<out RequestBody>, RequestBody> = emptyMap(),
+    val webSocket: su.kidoz.postest.domain.model.WebSocketTabState? = null,
 )
 
 data class AppState(
@@ -105,6 +109,7 @@ sealed class AppSideEffect {
  */
 class MainViewModel(
     executeRequestUseCase: ExecuteRequestUseCase,
+    connectWebSocketUseCase: ConnectWebSocketUseCase,
     manageCollectionsUseCase: ManageCollectionsUseCase,
     manageEnvironmentsUseCase: ManageEnvironmentsUseCase,
     manageHistoryUseCase: ManageHistoryUseCase,
@@ -131,6 +136,7 @@ class MainViewModel(
     private val sessionManager = SessionManager(manageSessionUseCase, workspace.state, this, viewModelScope)
     private val historyManager = HistoryManager(manageHistoryUseCase, this, viewModelScope)
     private val requestExecutionManager = RequestExecutionManager(executeRequestUseCase, workspace, historyManager, this, viewModelScope)
+    private val webSocketManager = WebSocketManager(connectWebSocketUseCase, workspace, this, viewModelScope)
     private val collectionManager =
         CollectionManager(manageCollectionsUseCase, this, viewModelScope) {
             presentation.update { it.copy(collectionDialog = false) }
@@ -217,7 +223,15 @@ class MainViewModel(
 
     init {
         viewModelScope.launch {
-            workspace.state.collect { requestExecutionManager.cancelMissingTabs(it.tabs.map { tab -> tab.id }.toSet()) }
+            workspace.state.collect { state ->
+                requestExecutionManager.cancelMissingTabs(state.tabs.map { tab -> tab.id }.toSet())
+                webSocketManager.syncTabs(
+                    state.tabs
+                        .filter { tab -> tab.request.protocol == RequestProtocol.WEBSOCKET }
+                        .map { tab -> tab.id }
+                        .toSet(),
+                )
+            }
         }
     }
 
@@ -283,6 +297,45 @@ class MainViewModel(
     // ========== Request Operations (delegated to RequestExecutionManager) ==========
 
     fun sendRequest() {
+        withActiveExecutionContext { tab, context ->
+            if (tab.request.protocol == RequestProtocol.WEBSOCKET) {
+                webSocketManager.connect(tab.id, tab.request, context)
+            } else {
+                requestExecutionManager.sendRequest(tab.id, tab.request, context.collectionVariables, context)
+            }
+        }
+    }
+
+    fun cancelRequest() {
+        val activeTabId = tabManager.getActiveTabId() ?: return
+        if (tabManager.getActiveTab()?.request?.protocol == RequestProtocol.WEBSOCKET) {
+            webSocketManager.disconnect(activeTabId)
+        } else {
+            requestExecutionManager.cancelRequest(activeTabId)
+        }
+    }
+
+    fun connectWebSocket() {
+        withActiveExecutionContext { tab, context ->
+            webSocketManager.connect(tab.id, tab.request, context)
+        }
+    }
+
+    fun disconnectWebSocket() {
+        tabManager.getActiveTabId()?.let { webSocketManager.disconnect(it) }
+    }
+
+    fun sendWebSocketMessage(text: String) {
+        val tab = tabManager.getActiveTab() ?: return
+        if (tab.request.protocol == RequestProtocol.WEBSOCKET) webSocketManager.sendMessage(tab.id, text)
+    }
+
+    fun clearWebSocketMessages() {
+        val tab = tabManager.getActiveTab() ?: return
+        if (tab.request.protocol == RequestProtocol.WEBSOCKET) webSocketManager.clearMessages(tab.id)
+    }
+
+    private fun withActiveExecutionContext(block: (TabState, ExecutionContext) -> Unit) {
         if (workspace.state.value.isClosing) return
         if (!state.value.isInitialized || state.value.initializationError != null) {
             emit(AppSideEffect.ShowError("Wait for workspace data to load before sending a request"))
@@ -297,13 +350,8 @@ class MainViewModel(
                         ?.variables
                 }.orEmpty()
         environmentManager.captureEnvironment { environment ->
-            requestExecutionManager.sendRequest(activeTab.id, activeTab.request, variables, ExecutionContext(environment, variables))
+            block(activeTab, ExecutionContext(environment, variables))
         }
-    }
-
-    fun cancelRequest() {
-        val activeTabId = tabManager.getActiveTabId() ?: return
-        requestExecutionManager.cancelRequest(activeTabId)
     }
 
     // ========== Collection Operations (delegated to CollectionManager) ==========
@@ -423,6 +471,7 @@ class MainViewModel(
             startup.join()
             workspace.dispatch(WorkspaceCommand.BeginClosing)
             requestExecutionManager.quiesce()
+            webSocketManager.quiesce()
             if (presentation.value.startupError != null) return@withLock true
             val saved = sessionManager.prepareToClose()
             if (!saved) workspace.dispatch(WorkspaceCommand.Resume)
@@ -432,6 +481,7 @@ class MainViewModel(
     fun cleanup() {
         logger.info { "MainViewModel cleanup: cancelling all coroutines" }
         requestExecutionManager.cleanup()
+        webSocketManager.cleanup()
         viewModelScope.cancel()
     }
 

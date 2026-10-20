@@ -8,6 +8,7 @@ import su.kidoz.postest.data.db.PostestDatabase
 import su.kidoz.postest.data.export.PostmanExporter
 import su.kidoz.postest.data.files.LocalCollectionFiles
 import su.kidoz.postest.data.http.HttpClientFactory
+import su.kidoz.postest.data.http.KtorWebSocketTransport
 import su.kidoz.postest.data.http.RequestExecutor
 import su.kidoz.postest.data.import.OpenAPICollectionDecoder
 import su.kidoz.postest.data.import.OpenAPIImporter
@@ -25,6 +26,8 @@ import su.kidoz.postest.data.security.StorageBootstrap
 import su.kidoz.postest.domain.port.CollectionFiles
 import su.kidoz.postest.domain.port.DraftSessionStore
 import su.kidoz.postest.domain.port.RequestTransport
+import su.kidoz.postest.domain.port.WebSocketTransport
+import su.kidoz.postest.domain.usecase.ConnectWebSocketUseCase
 import su.kidoz.postest.domain.usecase.ExecuteRequestUseCase
 import su.kidoz.postest.domain.usecase.ExportCollectionUseCase
 import su.kidoz.postest.domain.usecase.ImportCollectionUseCase
@@ -77,6 +80,10 @@ val networkModule =
         single<RequestTransport> {
             RequestExecutor(get(), get())
         }
+
+        single<WebSocketTransport> {
+            KtorWebSocketTransport(get(), get())
+        }
     }
 
 val repositoryModule =
@@ -101,6 +108,10 @@ val useCaseModule =
         single<ManageSessionUseCase> { ManageSessionUseCase(get()) }
         single<ExecuteRequestUseCase> {
             ExecuteRequestUseCase(get(), get())
+        }
+
+        single<ConnectWebSocketUseCase> {
+            ConnectWebSocketUseCase(get())
         }
 
         single<ManageCollectionsUseCase> {
@@ -144,7 +155,7 @@ val useCaseModule =
 val viewModelModule =
     module {
         single<MainViewModel> {
-            MainViewModel(get(), get(), get(), get(), get(), get(), get())
+            MainViewModel(get(), get(), get(), get(), get(), get(), get(), get())
         }
     }
 

@@ -24,6 +24,7 @@ import su.kidoz.postest.domain.model.HttpRequest
 import su.kidoz.postest.domain.model.HttpResponse
 import su.kidoz.postest.domain.model.RequestCollection
 import su.kidoz.postest.domain.model.ResponseTime
+import su.kidoz.postest.domain.usecase.ConnectWebSocketUseCase
 import su.kidoz.postest.domain.usecase.ExecuteRequestUseCase
 import su.kidoz.postest.domain.usecase.ExportCollectionUseCase
 import su.kidoz.postest.domain.usecase.ImportCollectionUseCase
@@ -45,6 +46,7 @@ class MainViewModelTest {
     private val testDispatcher = StandardTestDispatcher()
 
     private lateinit var executeRequestUseCase: ExecuteRequestUseCase
+    private lateinit var connectWebSocketUseCase: ConnectWebSocketUseCase
     private lateinit var manageCollectionsUseCase: ManageCollectionsUseCase
     private lateinit var manageEnvironmentsUseCase: ManageEnvironmentsUseCase
     private lateinit var manageHistoryUseCase: ManageHistoryUseCase
@@ -62,6 +64,7 @@ class MainViewModelTest {
         Dispatchers.setMain(testDispatcher)
 
         executeRequestUseCase = mockk()
+        connectWebSocketUseCase = mockk()
         manageCollectionsUseCase =
             mockk {
                 every { collections } returns collectionsFlow
@@ -104,6 +107,7 @@ class MainViewModelTest {
             val viewModel =
                 MainViewModel(
                     executeRequestUseCase,
+                    connectWebSocketUseCase,
                     manageCollectionsUseCase,
                     manageEnvironmentsUseCase,
                     manageHistoryUseCase,
@@ -130,6 +134,7 @@ class MainViewModelTest {
             val viewModel =
                 MainViewModel(
                     executeRequestUseCase,
+                    connectWebSocketUseCase,
                     manageCollectionsUseCase,
                     manageEnvironmentsUseCase,
                     manageHistoryUseCase,
@@ -147,6 +152,30 @@ class MainViewModelTest {
             viewModel.cleanup()
         }
 
+    @Test
+    fun `WebSocket tabs connect through the WebSocket use case`() =
+        runTest(testDispatcher) {
+            coEvery { connectWebSocketUseCase.connect(any(), any()) } returns
+                Result.failure(
+                    su.kidoz.postest.domain.model.RequestFailureException(
+                        su.kidoz.postest.domain.model.RequestFailure.HOST_NOT_FOUND,
+                    ),
+                )
+            val viewModel = createViewModel()
+            testScheduler.advanceUntilIdle()
+
+            viewModel.updateRequest(
+                HttpRequest(
+                    protocol = su.kidoz.postest.domain.model.RequestProtocol.WEBSOCKET,
+                    url = "wss://example.test/socket",
+                ),
+            )
+            viewModel.connectWebSocket()
+            testScheduler.advanceUntilIdle()
+
+            coVerify(exactly = 1) { connectWebSocketUseCase.connect(any(), any()) }
+        }
+
     @AfterTest
     fun tearDown() {
         Dispatchers.resetMain()
@@ -155,6 +184,7 @@ class MainViewModelTest {
     private fun createViewModel(): MainViewModel =
         MainViewModel(
             executeRequestUseCase,
+            connectWebSocketUseCase,
             manageCollectionsUseCase,
             manageEnvironmentsUseCase,
             manageHistoryUseCase,

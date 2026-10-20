@@ -2,6 +2,8 @@ package su.kidoz.postest.viewmodel.manager
 
 import su.kidoz.postest.domain.model.HistoryEntry
 import su.kidoz.postest.domain.model.HttpRequest
+import su.kidoz.postest.domain.model.RequestProtocol
+import su.kidoz.postest.domain.model.WebSocketTabState
 import su.kidoz.postest.viewmodel.TabState
 import su.kidoz.postest.viewmodel.WorkspaceCommand
 import su.kidoz.postest.viewmodel.WorkspaceStore
@@ -15,9 +17,13 @@ class TabManager(
     fun openRequest(
         request: HttpRequest,
         collectionItemId: String? = null,
-    ): String = open(TabState(request = request, collectionItemId = collectionItemId))
+    ): String = open(TabState(request = request, collectionItemId = collectionItemId, webSocket = initialWebSocket(request)))
 
-    fun openHistoryEntry(entry: HistoryEntry): String = open(TabState(request = entry.request, response = entry.response))
+    fun openHistoryEntry(entry: HistoryEntry): String =
+        open(TabState(request = entry.request, response = entry.response, webSocket = initialWebSocket(entry.request)))
+
+    private fun initialWebSocket(request: HttpRequest): WebSocketTabState? =
+        if (request.protocol == RequestProtocol.WEBSOCKET) WebSocketTabState() else null
 
     private fun open(tab: TabState): String {
         workspace.dispatch(WorkspaceCommand.OpenTab(tab))

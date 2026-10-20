@@ -29,6 +29,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import su.kidoz.postest.domain.model.HttpMethod
+import su.kidoz.postest.domain.model.RequestProtocol
 import su.kidoz.postest.ui.theme.AppTheme
 
 data class TabItem(
@@ -36,6 +37,7 @@ data class TabItem(
     val title: String,
     val method: HttpMethod,
     val isDirty: Boolean = false,
+    val protocol: RequestProtocol = RequestProtocol.HTTP,
 )
 
 @Composable
@@ -93,15 +95,20 @@ private fun RequestTab(
 ) {
     val extendedColors = AppTheme.extendedColors
     val methodColor =
-        when (tab.method) {
-            HttpMethod.GET -> extendedColors.methodGet
-            HttpMethod.POST -> extendedColors.methodPost
-            HttpMethod.PUT -> extendedColors.methodPut
-            HttpMethod.PATCH -> extendedColors.methodPatch
-            HttpMethod.DELETE -> extendedColors.methodDelete
-            HttpMethod.HEAD -> extendedColors.methodHead
-            HttpMethod.OPTIONS -> extendedColors.methodOptions
+        if (tab.protocol == RequestProtocol.WEBSOCKET) {
+            extendedColors.methodWebSocket
+        } else {
+            when (tab.method) {
+                HttpMethod.GET -> extendedColors.methodGet
+                HttpMethod.POST -> extendedColors.methodPost
+                HttpMethod.PUT -> extendedColors.methodPut
+                HttpMethod.PATCH -> extendedColors.methodPatch
+                HttpMethod.DELETE -> extendedColors.methodDelete
+                HttpMethod.HEAD -> extendedColors.methodHead
+                HttpMethod.OPTIONS -> extendedColors.methodOptions
+            }
         }
+    val methodLabel = if (tab.protocol == RequestProtocol.WEBSOCKET) "WS" else tab.method.name
 
     var showContextMenu by remember { mutableStateOf(false) }
 
@@ -142,7 +149,7 @@ private fun RequestTab(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Text(
-                        text = tab.method.name,
+                        text = methodLabel,
                         style = MaterialTheme.typography.labelSmall,
                         color = methodColor,
                     )

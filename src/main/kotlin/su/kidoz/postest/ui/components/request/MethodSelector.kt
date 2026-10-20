@@ -17,6 +17,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import su.kidoz.postest.domain.model.HttpMethod
+import su.kidoz.postest.domain.model.RequestProtocol
 import su.kidoz.postest.ui.theme.AppTheme
 
 @Composable
@@ -24,6 +25,8 @@ fun MethodSelector(
     selected: HttpMethod,
     onSelect: (HttpMethod) -> Unit,
     modifier: Modifier = Modifier,
+    protocol: RequestProtocol = RequestProtocol.HTTP,
+    onProtocolSelect: (RequestProtocol) -> Unit = {},
 ) {
     var expanded by remember { mutableStateOf(false) }
     val extendedColors = AppTheme.extendedColors
@@ -42,9 +45,14 @@ fun MethodSelector(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = selected.name,
+                text = if (protocol == RequestProtocol.WEBSOCKET) "WS" else selected.name,
                 style = MaterialTheme.typography.labelLarge,
-                color = getMethodColor(selected, extendedColors),
+                color =
+                    if (protocol == RequestProtocol.WEBSOCKET) {
+                        extendedColors.methodWebSocket
+                    } else {
+                        getMethodColor(selected, extendedColors)
+                    },
             )
             Spacer(Modifier.width(4.dp))
             Icon(
@@ -58,6 +66,14 @@ fun MethodSelector(
             expanded = expanded,
             onDismissRequest = { expanded = false },
         ) {
+            DropdownMenuItem(
+                text = { Text("WebSocket", color = extendedColors.methodWebSocket) },
+                onClick = {
+                    onProtocolSelect(RequestProtocol.WEBSOCKET)
+                    expanded = false
+                },
+            )
+            HorizontalDivider()
             HttpMethod.entries.forEach { method ->
                 DropdownMenuItem(
                     text = {
@@ -67,6 +83,7 @@ fun MethodSelector(
                         )
                     },
                     onClick = {
+                        onProtocolSelect(RequestProtocol.HTTP)
                         onSelect(method)
                         expanded = false
                     },

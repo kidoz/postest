@@ -41,6 +41,7 @@ object AppColors {
     val LightMethodDelete = Color(0xFFB92B32)
     val LightMethodHead = Color(0xFF7622BE)
     val LightMethodOptions = Color(0xFF185E9C)
+    val LightMethodWebSocket = Color(0xFF7A3DB8)
     val DarkMethodGet = Color(0xFF80BAFF)
     val DarkMethodPost = Color(0xFF5AD4A7)
     val DarkMethodPut = Color(0xFFF7C266)
@@ -48,6 +49,7 @@ object AppColors {
     val DarkMethodDelete = Color(0xFFFF8585)
     val DarkMethodHead = Color(0xFFC29AFF)
     val DarkMethodOptions = Color(0xFF80BAFF)
+    val DarkMethodWebSocket = Color(0xFFC9A2FF)
 
     val LightPrimaryContainer = Color(0xFFE6ECFF)
     val LightOnPrimaryContainer = Color(0xFF203A8C)

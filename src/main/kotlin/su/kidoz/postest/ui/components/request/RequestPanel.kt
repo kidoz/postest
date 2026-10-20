@@ -4,8 +4,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import su.kidoz.postest.domain.model.HttpRequest
+import su.kidoz.postest.domain.model.RequestProtocol
+import su.kidoz.postest.domain.model.WebSocketStatus
 import su.kidoz.postest.ui.components.common.SectionTabs
 
 @Composable
@@ -15,29 +16,42 @@ fun RequestPanel(
     onSend: () -> Unit,
     isLoading: Boolean,
     modifier: Modifier = Modifier,
+    webSocketStatus: WebSocketStatus = WebSocketStatus.DISCONNECTED,
+    onConnect: () -> Unit = onSend,
+    onDisconnect: () -> Unit = {},
 ) {
     Column(modifier = modifier) {
         // URL Bar
         UrlBar(
             method = request.method,
+            protocol = request.protocol,
             url = request.url,
             onMethodChange = { onRequestChange(request.copy(method = it)) },
-            onUrlChange = { onRequestChange(request.copy(url = it)) },
+            onProtocolChange = { onRequestChange(request.copy(protocol = it)) },
+            onUrlChange = { newUrl -> onRequestChange(request.copy(url = newUrl)) },
             onSend = onSend,
             isLoading = isLoading,
+            webSocketStatus = webSocketStatus,
+            onConnect = onConnect,
+            onDisconnect = onDisconnect,
         )
 
         // Tabs
-        var selectedTab by remember { mutableStateOf(0) }
-        val tabs = listOf("Params", "Headers", "Body", "Auth")
+        var selectedTab by remember(request.protocol) { mutableStateOf(0) }
+        val tabs =
+            if (request.protocol == RequestProtocol.WEBSOCKET) {
+                listOf("Params", "Headers", "Auth")
+            } else {
+                listOf("Params", "Headers", "Body", "Auth")
+            }
 
         SectionTabs(
             titles =
-                tabs.mapIndexed { index, title ->
+                tabs.map { title ->
                     val count =
-                        when (index) {
-                            0 -> request.queryParams.count { it.enabled && it.key.isNotBlank() }
-                            1 -> request.headers.count { it.enabled && it.key.isNotBlank() }
+                        when (title) {
+                            "Params" -> request.queryParams.count { it.enabled && it.key.isNotBlank() }
+                            "Headers" -> request.headers.count { it.enabled && it.key.isNotBlank() }
                             else -> 0
                         }
                     if (count > 0) "$title ($count)" else title
@@ -48,34 +62,35 @@ fun RequestPanel(
 
         // Tab Content
         Box(modifier = Modifier.weight(1f)) {
-            when (selectedTab) {
-                0 -> {
+            when (tabs.getOrNull(selectedTab)) {
+                "Params" -> {
                     ParamsEditor(
                         params = request.queryParams,
                         onParamsChange = { onRequestChange(request.copy(queryParams = it)) },
                     )
                 }
 
-                1 -> {
+                "Headers" -> {
                     HeadersEditor(
                         headers = request.headers,
                         onHeadersChange = { onRequestChange(request.copy(headers = it)) },
                     )
                 }
 
-                2 -> {
+                "Body" -> {
                     BodyEditor(
                         body = request.body,
                         onBodyChange = { onRequestChange(request.copy(body = it)) },
                     )
                 }
 
-                3 -> {
+                "Auth" -> {
                     AuthPanel(
                         auth = request.auth,
                         clientCertificate = request.clientCertificate,
                         onAuthChange = { onRequestChange(request.copy(auth = it)) },
                         onClientCertChange = { onRequestChange(request.copy(clientCertificate = it)) },
+                        showClientCertificate = request.protocol == RequestProtocol.HTTP,
                     )
                 }
             }

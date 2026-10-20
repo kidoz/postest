@@ -7,6 +7,7 @@ import io.ktor.client.plugins.api.Send
 import io.ktor.client.plugins.api.createClientPlugin
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.plugins.logging.*
+import io.ktor.client.plugins.websocket.*
 import io.ktor.http.*
 import io.ktor.network.tls.CertificateAndKey
 import io.ktor.serialization.kotlinx.json.*
@@ -57,6 +58,9 @@ internal fun isSensitiveHeaderName(name: String): Boolean {
         normalized.contains("auth")
 }
 
+/** Upper bound for a single WebSocket frame accepted from the server. */
+internal const val MAX_WEBSOCKET_FRAME_BYTES = 10L * 1024 * 1024
+
 object HttpClientFactory {
     fun create(enableLogging: Boolean = false): HttpClient = buildClient(enableLogging = enableLogging)
 
@@ -87,6 +91,10 @@ object HttpClientFactory {
             }
 
             installSensitiveHeaderGuard()
+
+            install(WebSockets) {
+                maxFrameSize = MAX_WEBSOCKET_FRAME_BYTES
+            }
 
             install(HttpTimeout) {
                 requestTimeoutMillis = 60_000

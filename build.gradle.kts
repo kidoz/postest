@@ -35,6 +35,7 @@ dependencies {
     implementation("io.ktor:ktor-client-content-negotiation:3.6.0")
     implementation("io.ktor:ktor-serialization-kotlinx-json:3.6.0")
     implementation("io.ktor:ktor-client-logging:3.6.0")
+    implementation("io.ktor:ktor-client-websockets:3.6.0")
 
     // Serialization
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
@@ -66,6 +67,9 @@ dependencies {
     // Testing
     testImplementation(kotlin("test"))
     testImplementation("io.ktor:ktor-client-mock:3.6.0")
+    testImplementation("io.ktor:ktor-server-core:3.6.0")
+    testImplementation("io.ktor:ktor-server-cio:3.6.0")
+    testImplementation("io.ktor:ktor-server-websockets:3.6.0")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
     testImplementation("io.mockk:mockk:1.14.11")
     testImplementation("io.insert-koin:koin-test:4.2.2")

@@ -160,4 +160,90 @@ class WorkspaceStoreTest {
     }
 
     private fun listOfSaved(): List<DraftTab> = listOf(DraftTab("saved", HttpRequest(), true))
+
+    private fun WorkspaceStore.addWebSocketMessage(
+        connectionId: String,
+        direction: WebSocketDirection,
+        content: String,
+    ) {
+        dispatch(
+            WorkspaceCommand.WebSocketMessageAdded(
+                "ws",
+                connectionId,
+                WebSocketMessage(direction = direction, content = content),
+            ),
+        )
+    }
+
+    @Test fun `websocket commands are scoped to the current connection and keep a bounded transcript`() {
+        val wsTab = TabState(id = "ws", request = HttpRequest(protocol = RequestProtocol.WEBSOCKET), webSocket = WebSocketTabState())
+        val store = WorkspaceStore(WorkspaceState(tabs = listOf(wsTab), activeTabId = wsTab.id))
+
+        store.dispatch(WorkspaceCommand.WebSocketConnecting("ws", "old"))
+        store.dispatch(WorkspaceCommand.WebSocketConnecting("ws", "current"))
+        store.addWebSocketMessage("old", WebSocketDirection.SENT, "ignored")
+        store.dispatch(WorkspaceCommand.WebSocketConnected("ws", "current"))
+        store.addWebSocketMessage("current", WebSocketDirection.RECEIVED, "hello")
+
+        val connected =
+            store.state.value.activeTab!!
+                .webSocket!!
+        assertEquals(WebSocketStatus.CONNECTED, connected.status)
+        assertEquals(listOf("hello"), connected.messages.map { it.content })
+
+        repeat(MAX_WEBSOCKET_MESSAGES + 5) {
+            store.addWebSocketMessage("current", WebSocketDirection.SENT, "m$it")
+        }
+        assertEquals(
+            MAX_WEBSOCKET_MESSAGES,
+            store.state.value.activeTab!!
+                .webSocket!!
+                .messages.size,
+        )
+
+        store.dispatch(WorkspaceCommand.WebSocketClosed("ws", "current", error = "Network error", systemMessage = "Connection closed"))
+        val closed =
+            store.state.value.activeTab!!
+                .webSocket!!
+        assertEquals(WebSocketStatus.DISCONNECTED, closed.status)
+        assertNull(closed.connectionId)
+        assertEquals("Network error", closed.error)
+        assertEquals("Connection closed", closed.messages.last().content)
+    }
+
+    @Test fun `switching protocol initializes and clears websocket state`() {
+        val store = store()
+        store.dispatch(WorkspaceCommand.EditRequest(tab.id, tab.request.copy(protocol = RequestProtocol.WEBSOCKET)))
+        assertEquals(
+            WebSocketStatus.DISCONNECTED,
+            store.state.value.activeTab
+                ?.webSocket
+                ?.status,
+        )
+
+        store.dispatch(WorkspaceCommand.EditRequest(tab.id, tab.request.copy(protocol = RequestProtocol.HTTP)))
+        assertNull(
+            store.state.value.activeTab
+                ?.webSocket,
+        )
+    }
+
+    @Test fun `restored websocket tabs start disconnected`() {
+        val store = store()
+        store.dispatch(
+            WorkspaceCommand.Restore(
+                DraftSession(
+                    tabs = listOf(DraftTab("ws", HttpRequest(protocol = RequestProtocol.WEBSOCKET), false)),
+                    activeTabId = "ws",
+                ),
+                store.state.value.toDraftSession(),
+            ),
+        )
+        assertEquals(
+            WebSocketStatus.DISCONNECTED,
+            store.state.value.activeTab
+                ?.webSocket
+                ?.status,
+        )
+    }
 }

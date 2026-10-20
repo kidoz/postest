@@ -4,9 +4,16 @@ import kotlinx.serialization.Serializable
 import java.util.UUID
 
 @Serializable
+enum class RequestProtocol {
+    HTTP,
+    WEBSOCKET,
+}
+
+@Serializable
 data class HttpRequest(
     val id: String = UUID.randomUUID().toString(),
     val name: String = "Untitled Request",
+    val protocol: RequestProtocol = RequestProtocol.HTTP,
     val method: HttpMethod = HttpMethod.GET,
     val url: String = "",
     val headers: List<KeyValue> = emptyList(),

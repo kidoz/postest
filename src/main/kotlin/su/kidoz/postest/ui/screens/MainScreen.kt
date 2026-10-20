@@ -11,6 +11,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.unit.dp
 import su.kidoz.postest.domain.model.RequestCollection
+import su.kidoz.postest.domain.model.RequestProtocol
+import su.kidoz.postest.domain.model.WebSocketStatus
+import su.kidoz.postest.domain.model.WebSocketTabState
 import su.kidoz.postest.ui.components.common.ConfirmDialog
 import su.kidoz.postest.ui.components.common.DesktopIconButton
 import su.kidoz.postest.ui.components.common.HorizontalSplitPane
@@ -19,6 +22,7 @@ import su.kidoz.postest.ui.components.common.TabItem
 import su.kidoz.postest.ui.components.common.VerticalSplitPane
 import su.kidoz.postest.ui.components.request.RequestPanel
 import su.kidoz.postest.ui.components.response.ResponsePanel
+import su.kidoz.postest.ui.components.response.WebSocketPanel
 import su.kidoz.postest.ui.components.sidebar.Sidebar
 import su.kidoz.postest.util.requestDisplayName
 import su.kidoz.postest.viewmodel.AppState
@@ -332,6 +336,7 @@ private fun TopAppBar(
                                 title = requestDisplayName(tab.request.name, tab.request.url),
                                 method = tab.request.method,
                                 isDirty = tab.isDirty,
+                                protocol = tab.request.protocol,
                             )
                         },
                     selectedTabId = state.activeTabId,
@@ -365,6 +370,7 @@ private fun RequestArea(
     val activeTab = state.activeTab
 
     if (activeTab != null) {
+        val webSocket = activeTab.webSocket
         VerticalSplitPane(
             modifier = Modifier.fillMaxSize(),
             splitFraction = 0.5f,
@@ -376,16 +382,28 @@ private fun RequestArea(
                     onRequestChange = { viewModel.updateRequest(it) },
                     onSend = { viewModel.sendRequest() },
                     isLoading = activeTab.isLoading,
+                    webSocketStatus = webSocket?.status ?: WebSocketStatus.DISCONNECTED,
+                    onConnect = { viewModel.connectWebSocket() },
+                    onDisconnect = { viewModel.disconnectWebSocket() },
                     modifier = Modifier.fillMaxSize(),
                 )
             },
             bottomContent = {
-                ResponsePanel(
-                    response = activeTab.response,
-                    error = activeTab.error,
-                    isLoading = activeTab.isLoading,
-                    modifier = Modifier.fillMaxSize(),
-                )
+                if (activeTab.request.protocol == RequestProtocol.WEBSOCKET) {
+                    WebSocketPanel(
+                        state = webSocket ?: WebSocketTabState(),
+                        onSendMessage = { viewModel.sendWebSocketMessage(it) },
+                        onClearMessages = { viewModel.clearWebSocketMessages() },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    ResponsePanel(
+                        response = activeTab.response,
+                        error = activeTab.error,
+                        isLoading = activeTab.isLoading,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
             },
         )
     } else {

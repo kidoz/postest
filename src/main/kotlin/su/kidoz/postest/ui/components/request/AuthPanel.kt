@@ -29,6 +29,7 @@ fun AuthPanel(
     onAuthChange: (AuthConfig?) -> Unit,
     onClientCertChange: (ClientCertConfig?) -> Unit,
     modifier: Modifier = Modifier,
+    showClientCertificate: Boolean = true,
 ) {
     val authType =
         when (auth) {
@@ -43,80 +44,82 @@ fun AuthPanel(
     var certEnabled by remember(clientCertificate != null) { mutableStateOf(clientCertificate != null) }
 
     Column(modifier = modifier.fillMaxSize().padding(8.dp).verticalScroll(rememberScrollState())) {
-        // Client Certificate section
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Checkbox(
-                checked = certEnabled,
-                onCheckedChange = { checked ->
-                    certEnabled = checked
-                    if (checked) {
-                        onClientCertChange(clientCertificate ?: ClientCertConfig(""))
-                    } else {
-                        onClientCertChange(null)
-                    }
-                },
-            )
-            Text("Client Certificate (mTLS)", style = MaterialTheme.typography.titleSmall)
-        }
-
-        if (certEnabled) {
-            val certConfig = clientCertificate ?: ClientCertConfig("")
-            val certPath = certConfig.certPath
-            val isPkcs12 =
-                certPath.lowercase().let { it.endsWith(".p12") || it.endsWith(".pfx") }
-
-            Column(
-                modifier = Modifier.padding(start = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+        // Client Certificate section (HTTP only; WebSocket connections do not apply mTLS config)
+        if (showClientCertificate) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text(
-                    text = "PEM (.pem, .crt + .key) or PKCS#12 (.p12, .pfx)",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
-                OutlinedTextField(
-                    value = certPath,
-                    onValueChange = { path ->
-                        onClientCertChange(certConfig.copy(certPath = path))
+                Checkbox(
+                    checked = certEnabled,
+                    onCheckedChange = { checked ->
+                        certEnabled = checked
+                        if (checked) {
+                            onClientCertChange(clientCertificate ?: ClientCertConfig(""))
+                        } else {
+                            onClientCertChange(null)
+                        }
                     },
-                    label = { Text("Certificate file") },
-                    placeholder = { Text("/path/to/client.pem or client.p12") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
                 )
+                Text("Client Certificate (mTLS)", style = MaterialTheme.typography.titleSmall)
+            }
 
-                if (!isPkcs12) {
+            if (certEnabled) {
+                val certConfig = clientCertificate ?: ClientCertConfig("")
+                val certPath = certConfig.certPath
+                val isPkcs12 =
+                    certPath.lowercase().let { it.endsWith(".p12") || it.endsWith(".pfx") }
+
+                Column(
+                    modifier = Modifier.padding(start = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        text = "PEM (.pem, .crt + .key) or PKCS#12 (.p12, .pfx)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+
                     OutlinedTextField(
-                        value = certConfig.keyPath,
+                        value = certPath,
                         onValueChange = { path ->
-                            onClientCertChange(certConfig.copy(keyPath = path))
+                            onClientCertChange(certConfig.copy(certPath = path))
                         },
-                        label = { Text("Private key file") },
-                        placeholder = { Text("/path/to/client.key") },
+                        label = { Text("Certificate file") },
+                        placeholder = { Text("/path/to/client.pem or client.p12") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                     )
+
+                    if (!isPkcs12) {
+                        OutlinedTextField(
+                            value = certConfig.keyPath,
+                            onValueChange = { path ->
+                                onClientCertChange(certConfig.copy(keyPath = path))
+                            },
+                            label = { Text("Private key file") },
+                            placeholder = { Text("/path/to/client.key") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                        )
+                    }
+
+                    OutlinedTextField(
+                        value = certConfig.passphrase,
+                        onValueChange = { pass ->
+                            onClientCertChange(certConfig.copy(passphrase = pass))
+                        },
+                        label = { Text("Passphrase") },
+                        placeholder = { Text("Certificate password") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                    )
                 }
 
-                OutlinedTextField(
-                    value = certConfig.passphrase,
-                    onValueChange = { pass ->
-                        onClientCertChange(certConfig.copy(passphrase = pass))
-                    },
-                    label = { Text("Passphrase") },
-                    placeholder = { Text("Certificate password") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                )
+                Spacer(Modifier.height(8.dp))
+                HorizontalDivider()
             }
-
-            Spacer(Modifier.height(8.dp))
-            HorizontalDivider()
         }
 
         Spacer(Modifier.height(12.dp))

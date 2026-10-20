@@ -7,7 +7,13 @@ import su.kidoz.postest.domain.model.DraftSession
 import su.kidoz.postest.domain.model.DraftTab
 import su.kidoz.postest.domain.model.HttpRequest
 import su.kidoz.postest.domain.model.HttpResponse
+import su.kidoz.postest.domain.model.MAX_WEBSOCKET_MESSAGES
 import su.kidoz.postest.domain.model.RequestBody
+import su.kidoz.postest.domain.model.RequestProtocol
+import su.kidoz.postest.domain.model.WebSocketDirection
+import su.kidoz.postest.domain.model.WebSocketMessage
+import su.kidoz.postest.domain.model.WebSocketStatus
+import su.kidoz.postest.domain.model.WebSocketTabState
 import su.kidoz.postest.domain.model.limitBodyForStorage
 
 /** Values with shared invariants are changed in one atomic workspace transition. */
@@ -63,6 +69,33 @@ sealed interface WorkspaceCommand {
         val executionId: String,
     ) : WorkspaceCommand
 
+    data class WebSocketConnecting(
+        val tabId: String,
+        val connectionId: String,
+    ) : WorkspaceCommand
+
+    data class WebSocketConnected(
+        val tabId: String,
+        val connectionId: String,
+    ) : WorkspaceCommand
+
+    data class WebSocketMessageAdded(
+        val tabId: String,
+        val connectionId: String,
+        val message: WebSocketMessage,
+    ) : WorkspaceCommand
+
+    data class WebSocketClosed(
+        val tabId: String,
+        val connectionId: String,
+        val error: String? = null,
+        val systemMessage: String? = null,
+    ) : WorkspaceCommand
+
+    data class WebSocketMessagesCleared(
+        val tabId: String,
+    ) : WorkspaceCommand
+
     data class Restore(
         val session: DraftSession?,
         val initial: DraftSession,
@@ -109,6 +142,12 @@ class WorkspaceStore(
                         request = command.request.copy(body = if (command.request.body == null) null else restored),
                         isDirty = tab.isDirty || command.request != tab.request,
                         bodyDrafts = drafts + (restored::class to restored),
+                        webSocket =
+                            if (command.request.protocol == RequestProtocol.WEBSOCKET) {
+                                tab.webSocket ?: WebSocketTabState()
+                            } else {
+                                null
+                            },
                     )
                 }
             }
@@ -160,6 +199,42 @@ class WorkspaceStore(
                 }
             }
 
+            is WorkspaceCommand.WebSocketConnecting -> {
+                current.mapTab(command.tabId) { tab ->
+                    tab.withWebSocket { it.copy(status = WebSocketStatus.CONNECTING, connectionId = command.connectionId, error = null) }
+                }
+            }
+
+            is WorkspaceCommand.WebSocketConnected -> {
+                current.mapTab(command.tabId) { tab ->
+                    tab.withWebSocket(command.connectionId) { it.copy(status = WebSocketStatus.CONNECTED, error = null) }
+                }
+            }
+
+            is WorkspaceCommand.WebSocketMessageAdded -> {
+                current.mapTab(command.tabId) { tab ->
+                    tab.withWebSocket(command.connectionId) { state ->
+                        state.copy(messages = state.messages.append(command.message))
+                    }
+                }
+            }
+
+            is WorkspaceCommand.WebSocketClosed -> {
+                current.mapTab(command.tabId) { tab ->
+                    tab.withWebSocket(command.connectionId) { state ->
+                        val messages =
+                            command.systemMessage
+                                ?.let { state.messages.append(WebSocketMessage(direction = WebSocketDirection.SYSTEM, content = it)) }
+                                ?: state.messages
+                        state.copy(status = WebSocketStatus.DISCONNECTED, connectionId = null, error = command.error, messages = messages)
+                    }
+                }
+            }
+
+            is WorkspaceCommand.WebSocketMessagesCleared -> {
+                current.mapTab(command.tabId) { tab -> tab.withWebSocket { it.copy(messages = emptyList()) } }
+            }
+
             is WorkspaceCommand.Restore -> {
                 restore(current, command)
             }
@@ -192,6 +267,7 @@ class WorkspaceStore(
                     error = tab.error,
                     isDirty = tab.isDirty,
                     bodyDrafts = tab.bodyDrafts.associateBy { it::class },
+                    webSocket = if (tab.request.protocol == RequestProtocol.WEBSOCKET) WebSocketTabState() else null,
                 )
             }
         // Preserve edits accepted while the disk read was pending. Current values win on ID collisions.
@@ -229,6 +305,17 @@ class WorkspaceStore(
         id: String,
         transform: (TabState) -> TabState,
     ): WorkspaceState = copy(tabs = tabs.map { if (it.id == id) transform(it) else it })
+
+    private fun TabState.withWebSocket(transform: (WebSocketTabState) -> WebSocketTabState): TabState =
+        webSocket?.let { copy(webSocket = transform(it)) } ?: this
+
+    private fun TabState.withWebSocket(
+        connectionId: String,
+        transform: (WebSocketTabState) -> WebSocketTabState,
+    ): TabState = withWebSocket { if (it.connectionId == connectionId) transform(it) else it }
+
+    private fun List<WebSocketMessage>.append(message: WebSocketMessage): List<WebSocketMessage> =
+        (this + message).takeLast(MAX_WEBSOCKET_MESSAGES)
 }
 
 /** Persistence is a projection of live workspace state, never a second live state owner. */
