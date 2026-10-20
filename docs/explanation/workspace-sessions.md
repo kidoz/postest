@@ -23,7 +23,11 @@ Loading state is not saved. A tab never restores as "loading" because no request
 
 ## When it saves
 
-`SessionManager` observes the application state and saves a snapshot after a 300 ms debounce. When the window closes, `prepareToClose` stops the observer, writes the latest snapshot, and only then lets the app exit. If the write fails, the app stays open and shows an error so the user can retry.
+`SessionManager` observes a read-only projection of `WorkspaceStore` and saves after a 300 ms debounce. Changes to loading flags, execution identities, or unrelated repository/presentation data do not trigger draft writes. The session manager cannot edit live tabs.
+
+Writes use one serialized writer with monotonically increasing revisions. An in-progress commit is allowed to finish rather than relying on cancellation to interrupt synchronous database work.
+
+Closing waits for restoration, freezes workspace edits, cancels and joins request jobs, and flushes the latest authoritative workspace snapshot. The flush waits for any older commit before writing the final snapshot. The app exits only after success. On failure, command handling and autosave resume so the user can keep working and retry.
 
 ## Where it is stored
 
@@ -34,7 +38,7 @@ The snapshot is a JSON string in the `WorkspaceSession` table of `~/.postest/pos
 | `current` | active workspace snapshot |
 | `backup` | copy of a snapshot that failed validation |
 
-Saving replaces the `current` row. On startup, `SessionRepository` reads it, checks the version and tab ids, and `SessionManager` restores the tabs.
+Saving replaces the `current` row. On startup, `SessionRepository` reads it, checks the version and tab ids, and `MainViewModel` sends a typed restore command to `WorkspaceStore`.
 
 If the stored JSON is invalid or unsupported, Postest copies the row to `backup`, reports that saved drafts could not be restored, and starts with a fresh workspace. The error message deliberately does not include request content.
 
@@ -44,7 +48,7 @@ If the user edits the workspace while the saved session is still loading, the re
 
 ## Trade-offs
 
-- Responses are stored with the session, so large response bodies increase the size of the `WorkspaceSession` row.
+- Responses are stored with the session using the persisted-response size limit. The live response remains separate from the bounded recovery copy.
 - The session contains the same sensitive values as the request: auth credentials, client-certificate passphrases, and response bodies. The database is not encrypted. See [Security model](security-model.md).
 - The snapshot is local to the machine and is never uploaded.
 
