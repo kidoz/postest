@@ -15,6 +15,12 @@ class AuthorizeOAuth2UseCase(
         context: ExecutionContext,
     ): Result<OAuth2Token> = tokenProvider.authorize(resolve(config, context))
 
+    /** Returns a usable token, refreshing silently when an expired token has a refresh token. */
+    suspend fun token(
+        config: AuthConfig.OAuth2,
+        context: ExecutionContext,
+    ): Result<OAuth2Token> = tokenProvider.token(resolve(config, context))
+
     private fun resolve(
         config: AuthConfig.OAuth2,
         context: ExecutionContext,
@@ -26,6 +32,8 @@ class AuthorizeOAuth2UseCase(
             clientId = resolve(config.clientId),
             clientSecret = resolve(config.clientSecret),
             scope = resolve(config.scope),
+            accessToken = resolve(config.accessToken),
+            refreshToken = resolve(config.refreshToken),
         )
     }
 }

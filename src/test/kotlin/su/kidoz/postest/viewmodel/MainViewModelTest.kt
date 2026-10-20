@@ -15,6 +15,7 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import su.kidoz.postest.domain.model.AuthConfig
 import su.kidoz.postest.domain.model.CollectionItem
 import su.kidoz.postest.domain.model.Environment
 import su.kidoz.postest.domain.model.EnvironmentSnapshot
@@ -22,7 +23,12 @@ import su.kidoz.postest.domain.model.HistoryEntry
 import su.kidoz.postest.domain.model.HttpMethod
 import su.kidoz.postest.domain.model.HttpRequest
 import su.kidoz.postest.domain.model.HttpResponse
+import su.kidoz.postest.domain.model.OAuth2Exception
+import su.kidoz.postest.domain.model.OAuth2Failure
+import su.kidoz.postest.domain.model.OAuth2Token
 import su.kidoz.postest.domain.model.RequestCollection
+import su.kidoz.postest.domain.model.RequestFailure
+import su.kidoz.postest.domain.model.RequestFailureException
 import su.kidoz.postest.domain.model.ResponseTime
 import su.kidoz.postest.domain.usecase.AuthorizeOAuth2UseCase
 import su.kidoz.postest.domain.usecase.ConnectWebSocketUseCase
@@ -211,6 +217,88 @@ class MainViewModelTest {
                     ?.auth as su.kidoz.postest.domain.model.AuthConfig.OAuth2
             assertEquals("token-1", auth.accessToken)
             assertEquals(123, auth.expiresAt)
+        }
+
+    @Test
+    fun `expired OAuth2 tokens are refreshed and persisted before sending`() =
+        runTest(testDispatcher) {
+            coEvery { authorizeOAuth2UseCase.token(any(), any()) } returns
+                Result.success(OAuth2Token(accessToken = "new-token", refreshToken = "rotated", expiresAt = 456))
+            coEvery { executeRequestUseCase.execute(any(), any()) } returns Result.success(createSuccessResponse())
+            val viewModel = createViewModel()
+            testScheduler.advanceUntilIdle()
+            viewModel.updateRequest(
+                HttpRequest(
+                    url = "https://api.example.test",
+                    auth =
+                        AuthConfig.OAuth2(
+                            tokenUrl = "https://provider.test/token",
+                            clientId = "client",
+                            accessToken = "old",
+                            refreshToken = "refresh-1",
+                            expiresAt = 1,
+                        ),
+                ),
+            )
+
+            viewModel.sendRequest()
+            testScheduler.advanceUntilIdle()
+
+            val auth =
+                viewModel.state.value.activeTab
+                    ?.request
+                    ?.auth as AuthConfig.OAuth2
+            assertEquals("new-token", auth.accessToken)
+            assertEquals("rotated", auth.refreshToken)
+            assertEquals(456, auth.expiresAt)
+            coVerify(exactly = 1) {
+                executeRequestUseCase.execute(match { (it.auth as AuthConfig.OAuth2).accessToken == "new-token" }, any())
+            }
+        }
+
+    @Test
+    fun `failed OAuth2 refresh blocks sending`() =
+        runTest(testDispatcher) {
+            coEvery { authorizeOAuth2UseCase.token(any(), any()) } returns
+                Result.failure(OAuth2Exception(OAuth2Failure.TOKEN_REQUEST_FAILED))
+            val viewModel = createViewModel()
+            testScheduler.advanceUntilIdle()
+            viewModel.updateRequest(
+                HttpRequest(
+                    url = "https://api.example.test",
+                    auth = AuthConfig.OAuth2(tokenUrl = "https://provider.test/token", refreshToken = "refresh-1"),
+                ),
+            )
+
+            viewModel.sendRequest()
+            testScheduler.advanceUntilIdle()
+
+            coVerify(exactly = 0) { executeRequestUseCase.execute(any(), any()) }
+        }
+
+    @Test
+    fun `websocket connection uses the refreshed OAuth2 token`() =
+        runTest(testDispatcher) {
+            coEvery { authorizeOAuth2UseCase.token(any(), any()) } returns
+                Result.success(OAuth2Token(accessToken = "ws-token", refreshToken = "rotated"))
+            coEvery { connectWebSocketUseCase.connect(any(), any()) } returns
+                Result.failure(RequestFailureException(RequestFailure.HOST_NOT_FOUND))
+            val viewModel = createViewModel()
+            testScheduler.advanceUntilIdle()
+            viewModel.updateRequest(
+                HttpRequest(
+                    protocol = su.kidoz.postest.domain.model.RequestProtocol.WEBSOCKET,
+                    url = "wss://api.example.test/socket",
+                    auth = AuthConfig.OAuth2(tokenUrl = "https://provider.test/token", refreshToken = "refresh-1"),
+                ),
+            )
+
+            viewModel.connectWebSocket()
+            testScheduler.advanceUntilIdle()
+
+            coVerify(exactly = 1) {
+                connectWebSocketUseCase.connect(match { (it.auth as AuthConfig.OAuth2).accessToken == "ws-token" }, any())
+            }
         }
 
     @AfterTest

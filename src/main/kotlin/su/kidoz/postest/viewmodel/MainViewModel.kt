@@ -306,10 +306,12 @@ class MainViewModel(
 
     fun sendRequest() {
         withActiveExecutionContext { tab, context ->
-            if (tab.request.protocol == RequestProtocol.WEBSOCKET) {
-                webSocketManager.connect(tab.id, tab.request, context)
-            } else {
-                requestExecutionManager.sendRequest(tab.id, tab.request, context.collectionVariables, context)
+            withFreshOAuthToken(tab, context) { request, effectiveContext ->
+                if (request.protocol == RequestProtocol.WEBSOCKET) {
+                    webSocketManager.connect(tab.id, request, effectiveContext)
+                } else {
+                    requestExecutionManager.sendRequest(tab.id, request, effectiveContext.collectionVariables, effectiveContext)
+                }
             }
         }
     }
@@ -325,7 +327,11 @@ class MainViewModel(
 
     fun connectWebSocket() {
         withActiveExecutionContext { tab, context ->
-            webSocketManager.connect(tab.id, tab.request, context)
+            withFreshOAuthToken(tab, context) { request, effectiveContext ->
+                if (request.protocol == RequestProtocol.WEBSOCKET) {
+                    webSocketManager.connect(tab.id, request, effectiveContext)
+                }
+            }
         }
     }
 
@@ -383,15 +389,58 @@ class MainViewModel(
                 authorizeOAuth2UseCase
                     .authorize(config, context)
                     .onSuccess { token -> applyOAuth2Token(tab.id, token) }
-                    .onFailure { error ->
-                        val message =
-                            (error as? OAuth2Exception)?.failure?.description
-                                ?: "OAuth 2.0 authorization failed"
-                        emit(AppSideEffect.ShowError(message))
-                    }
+                    .onFailure { error -> emit(AppSideEffect.ShowError(oauth2ErrorMessage(error))) }
             }
         }
     }
+
+    /**
+     * Refreshes an expired OAuth token before sending and persists rotated refresh tokens.
+     * Non-OAuth requests proceed immediately.
+     */
+    private fun withFreshOAuthToken(
+        tab: TabState,
+        context: ExecutionContext,
+        action: (HttpRequest, ExecutionContext) -> Unit,
+    ) {
+        val config = tab.request.auth as? AuthConfig.OAuth2
+        if (config == null) {
+            action(tab.request, context)
+            return
+        }
+        if (config.accessToken.isBlank() || (config.expiresAt > 0 && System.currentTimeMillis() >= config.expiresAt)) {
+            emit(AppSideEffect.ShowToast("Refreshing OAuth 2.0 token…"))
+        }
+        viewModelScope.launch {
+            authorizeOAuth2UseCase
+                .token(config, context)
+                .onSuccess { token ->
+                    val current =
+                        workspace.state.value.tabs
+                            .firstOrNull { it.id == tab.id } ?: return@onSuccess
+                    val currentConfig = current.request.auth as? AuthConfig.OAuth2 ?: return@onSuccess
+                    val updatedRequest =
+                        current.request.copy(
+                            auth =
+                                currentConfig.copy(
+                                    accessToken = token.accessToken,
+                                    refreshToken = token.refreshToken.ifBlank { currentConfig.refreshToken },
+                                    tokenType = token.tokenType.ifBlank { currentConfig.tokenType },
+                                    expiresAt = token.expiresAt,
+                                ),
+                        )
+                    // Do not replace environment-variable token fields with resolved literals.
+                    if (!config.accessToken.contains("{{") && !config.refreshToken.contains("{{")) {
+                        tabManager.updateRequest(tab.id, updatedRequest)
+                    }
+                    action(updatedRequest, context)
+                }.onFailure { error -> emit(AppSideEffect.ShowError(oauth2ErrorMessage(error))) }
+        }
+    }
+
+    private fun oauth2ErrorMessage(error: Throwable): String =
+        (error as? OAuth2Exception)?.failure?.description
+            ?: "OAuth 2.0 authorization failed"
 
     /** Applies the token only if the tab still exists and still uses OAuth 2.0. */
     private fun applyOAuth2Token(
