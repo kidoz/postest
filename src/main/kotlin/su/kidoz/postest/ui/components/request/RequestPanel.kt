@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import su.kidoz.postest.domain.model.AuthConfig
 import su.kidoz.postest.domain.model.HttpRequest
 import su.kidoz.postest.domain.model.RequestProtocol
 import su.kidoz.postest.domain.model.WebSocketStatus
@@ -19,6 +20,7 @@ fun RequestPanel(
     webSocketStatus: WebSocketStatus = WebSocketStatus.DISCONNECTED,
     onConnect: () -> Unit = onSend,
     onDisconnect: () -> Unit = {},
+    onAuthorizeOAuth2: (AuthConfig.OAuth2) -> Unit = {},
 ) {
     Column(modifier = modifier) {
         // URL Bar
@@ -91,6 +93,7 @@ fun RequestPanel(
                         onAuthChange = { onRequestChange(request.copy(auth = it)) },
                         onClientCertChange = { onRequestChange(request.copy(clientCertificate = it)) },
                         showClientCertificate = request.protocol == RequestProtocol.HTTP,
+                        onAuthorizeOAuth2 = onAuthorizeOAuth2,
                     )
                 }
             }

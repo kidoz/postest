@@ -4,6 +4,7 @@ import app.cash.sqldelight.db.SqlDriver
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.client.*
 import org.koin.dsl.module
+import su.kidoz.postest.data.auth.KtorOAuth2TokenProvider
 import su.kidoz.postest.data.db.PostestDatabase
 import su.kidoz.postest.data.export.PostmanExporter
 import su.kidoz.postest.data.files.LocalCollectionFiles
@@ -25,8 +26,10 @@ import su.kidoz.postest.data.security.RecordCodec
 import su.kidoz.postest.data.security.StorageBootstrap
 import su.kidoz.postest.domain.port.CollectionFiles
 import su.kidoz.postest.domain.port.DraftSessionStore
+import su.kidoz.postest.domain.port.OAuth2TokenProvider
 import su.kidoz.postest.domain.port.RequestTransport
 import su.kidoz.postest.domain.port.WebSocketTransport
+import su.kidoz.postest.domain.usecase.AuthorizeOAuth2UseCase
 import su.kidoz.postest.domain.usecase.ConnectWebSocketUseCase
 import su.kidoz.postest.domain.usecase.ExecuteRequestUseCase
 import su.kidoz.postest.domain.usecase.ExportCollectionUseCase
@@ -77,12 +80,16 @@ val networkModule =
             VariableResolver()
         }
 
+        single<OAuth2TokenProvider> {
+            KtorOAuth2TokenProvider(get())
+        }
+
         single<RequestTransport> {
-            RequestExecutor(get(), get())
+            RequestExecutor(get(), get(), get())
         }
 
         single<WebSocketTransport> {
-            KtorWebSocketTransport(get(), get())
+            KtorWebSocketTransport(get(), get(), get())
         }
     }
 
@@ -112,6 +119,10 @@ val useCaseModule =
 
         single<ConnectWebSocketUseCase> {
             ConnectWebSocketUseCase(get())
+        }
+
+        single<AuthorizeOAuth2UseCase> {
+            AuthorizeOAuth2UseCase(get(), get())
         }
 
         single<ManageCollectionsUseCase> {
@@ -155,7 +166,7 @@ val useCaseModule =
 val viewModelModule =
     module {
         single<MainViewModel> {
-            MainViewModel(get(), get(), get(), get(), get(), get(), get(), get())
+            MainViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get())
         }
     }
 

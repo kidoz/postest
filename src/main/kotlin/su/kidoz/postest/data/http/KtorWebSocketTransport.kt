@@ -24,8 +24,10 @@ import kotlinx.coroutines.sync.withLock
 import su.kidoz.postest.domain.model.AuthConfig
 import su.kidoz.postest.domain.model.ExecutionContext
 import su.kidoz.postest.domain.model.HttpRequest
+import su.kidoz.postest.domain.model.OAuth2Exception
 import su.kidoz.postest.domain.model.RequestFailure
 import su.kidoz.postest.domain.model.RequestFailureException
+import su.kidoz.postest.domain.port.OAuth2TokenProvider
 import su.kidoz.postest.domain.port.WebSocketConnection
 import su.kidoz.postest.domain.port.WebSocketEvent
 import su.kidoz.postest.domain.port.WebSocketTransport
@@ -41,6 +43,7 @@ import javax.net.ssl.SSLException
 class KtorWebSocketTransport(
     private val client: HttpClient,
     private val variableResolver: VariableResolver,
+    private val oauth2TokenProvider: OAuth2TokenProvider? = null,
 ) : WebSocketTransport {
     override suspend fun connect(
         request: HttpRequest,
@@ -56,17 +59,23 @@ class KtorWebSocketTransport(
         }
 
         return try {
+            val oauth2Header =
+                (request.auth as? AuthConfig.OAuth2)?.let { config ->
+                    oauth2Authorization(resolveOAuth2Token(config, oauth2TokenProvider, ::resolve))
+                }
             val session =
                 client.webSocketSession {
                     url(url)
                     request.headers
                         .filter { it.enabled && it.key.isNotBlank() }
                         .forEach { header(resolve(it.key), resolve(it.value)) }
-                    applyAuth(request.auth, ::resolve) { key, value -> header(key, value) }
+                    applyAuth(request.auth, ::resolve, oauth2Header) { key, value -> header(key, value) }
                 }
             Result.success(KtorWebSocketConnection(session))
         } catch (cancelled: CancellationException) {
             throw cancelled
+        } catch (auth: OAuth2Exception) {
+            Result.failure(auth)
         } catch (error: Exception) {
             Result.failure(RequestFailureException(webSocketFailure(error)))
         }
@@ -75,6 +84,7 @@ class KtorWebSocketTransport(
     private fun applyAuth(
         auth: AuthConfig?,
         resolve: (String) -> String,
+        oauth2Header: String?,
         setHeader: (String, String) -> Unit,
     ) {
         when (auth) {
@@ -94,6 +104,10 @@ class KtorWebSocketTransport(
                 if (auth.addTo == AuthConfig.ApiKey.AddTo.HEADER) {
                     setHeader(resolve(auth.key), resolve(auth.value))
                 }
+            }
+
+            is AuthConfig.OAuth2 -> {
+                oauth2Header?.let { setHeader(HttpHeaders.Authorization, it) }
             }
 
             AuthConfig.None, null -> {}
@@ -120,6 +134,7 @@ internal fun hasHeaderInjection(
         is AuthConfig.Basic -> badValue(resolve(auth.username)) || badValue(resolve(auth.password))
         is AuthConfig.Bearer -> badValue(resolve(auth.token))
         is AuthConfig.ApiKey -> badName(resolve(auth.key)) || badValue(resolve(auth.value))
+        is AuthConfig.OAuth2 -> badValue(resolve(auth.accessToken)) || badValue(resolve(auth.tokenType))
         AuthConfig.None, null -> false
     }
 }

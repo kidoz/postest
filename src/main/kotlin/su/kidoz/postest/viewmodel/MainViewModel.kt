@@ -22,16 +22,21 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import su.kidoz.postest.domain.model.AuthConfig
 import su.kidoz.postest.domain.model.Environment
 import su.kidoz.postest.domain.model.EnvironmentSnapshot
 import su.kidoz.postest.domain.model.ExecutionContext
 import su.kidoz.postest.domain.model.HistoryEntry
 import su.kidoz.postest.domain.model.HttpRequest
+import su.kidoz.postest.domain.model.OAuth2Exception
+import su.kidoz.postest.domain.model.OAuth2GrantType
+import su.kidoz.postest.domain.model.OAuth2Token
 import su.kidoz.postest.domain.model.RequestBody
 import su.kidoz.postest.domain.model.RequestCollection
 import su.kidoz.postest.domain.model.RequestProtocol
 import su.kidoz.postest.domain.model.containsItem
 import su.kidoz.postest.domain.port.StorageAccessException
+import su.kidoz.postest.domain.usecase.AuthorizeOAuth2UseCase
 import su.kidoz.postest.domain.usecase.ConnectWebSocketUseCase
 import su.kidoz.postest.domain.usecase.ExecuteRequestUseCase
 import su.kidoz.postest.domain.usecase.ExportCollectionUseCase
@@ -110,6 +115,7 @@ sealed class AppSideEffect {
 class MainViewModel(
     executeRequestUseCase: ExecuteRequestUseCase,
     connectWebSocketUseCase: ConnectWebSocketUseCase,
+    private val authorizeOAuth2UseCase: AuthorizeOAuth2UseCase,
     manageCollectionsUseCase: ManageCollectionsUseCase,
     manageEnvironmentsUseCase: ManageEnvironmentsUseCase,
     manageHistoryUseCase: ManageHistoryUseCase,
@@ -333,6 +339,56 @@ class MainViewModel(
     fun clearWebSocketMessages() {
         val tab = tabManager.getActiveTab() ?: return
         if (tab.request.protocol == RequestProtocol.WEBSOCKET) webSocketManager.clearMessages(tab.id)
+    }
+
+    fun authorizeOAuth2() {
+        withActiveExecutionContext { tab, context ->
+            val config = tab.request.auth as? AuthConfig.OAuth2 ?: return@withActiveExecutionContext
+            emit(
+                AppSideEffect.ShowToast(
+                    if (config.grantType == OAuth2GrantType.CLIENT_CREDENTIALS) {
+                        "Requesting OAuth 2.0 token…"
+                    } else {
+                        "Complete authorization in your browser…"
+                    },
+                ),
+            )
+            viewModelScope.launch {
+                authorizeOAuth2UseCase
+                    .authorize(config, context)
+                    .onSuccess { token -> applyOAuth2Token(tab.id, token) }
+                    .onFailure { error ->
+                        val message =
+                            (error as? OAuth2Exception)?.failure?.description
+                                ?: "OAuth 2.0 authorization failed"
+                        emit(AppSideEffect.ShowError(message))
+                    }
+            }
+        }
+    }
+
+    /** Applies the token only if the tab still exists and still uses OAuth 2.0. */
+    private fun applyOAuth2Token(
+        tabId: String,
+        token: OAuth2Token,
+    ) {
+        val tab =
+            workspace.state.value.tabs
+                .firstOrNull { it.id == tabId } ?: return
+        val config = tab.request.auth as? AuthConfig.OAuth2 ?: return
+        tabManager.updateRequest(
+            tabId,
+            tab.request.copy(
+                auth =
+                    config.copy(
+                        accessToken = token.accessToken,
+                        refreshToken = token.refreshToken.ifBlank { config.refreshToken },
+                        tokenType = token.tokenType.ifBlank { "Bearer" },
+                        expiresAt = token.expiresAt,
+                    ),
+            ),
+        )
+        emit(AppSideEffect.ShowToast("OAuth 2.0 token acquired"))
     }
 
     private fun withActiveExecutionContext(block: (TabState, ExecutionContext) -> Unit) {

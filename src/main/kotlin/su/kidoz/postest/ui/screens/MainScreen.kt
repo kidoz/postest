@@ -385,6 +385,7 @@ private fun RequestArea(
                     webSocketStatus = webSocket?.status ?: WebSocketStatus.DISCONNECTED,
                     onConnect = { viewModel.connectWebSocket() },
                     onDisconnect = { viewModel.disconnectWebSocket() },
+                    onAuthorizeOAuth2 = { viewModel.authorizeOAuth2() },
                     modifier = Modifier.fillMaxSize(),
                 )
             },

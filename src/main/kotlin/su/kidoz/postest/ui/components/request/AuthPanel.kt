@@ -8,10 +8,17 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import su.kidoz.postest.domain.model.AuthConfig
 import su.kidoz.postest.domain.model.ClientCertConfig
+import su.kidoz.postest.domain.model.OAuth2GrantType
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+
+private val tokenExpiryFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault())
 
 enum class AuthType(
     val displayName: String,
@@ -20,6 +27,7 @@ enum class AuthType(
     BASIC("Basic Auth"),
     BEARER("Bearer Token"),
     API_KEY("API Key"),
+    OAUTH2("OAuth 2.0"),
 }
 
 @Composable
@@ -30,12 +38,14 @@ fun AuthPanel(
     onClientCertChange: (ClientCertConfig?) -> Unit,
     modifier: Modifier = Modifier,
     showClientCertificate: Boolean = true,
+    onAuthorizeOAuth2: (AuthConfig.OAuth2) -> Unit = {},
 ) {
     val authType =
         when (auth) {
             is AuthConfig.Basic -> AuthType.BASIC
             is AuthConfig.Bearer -> AuthType.BEARER
             is AuthConfig.ApiKey -> AuthType.API_KEY
+            is AuthConfig.OAuth2 -> AuthType.OAUTH2
             else -> AuthType.NONE
         }
 
@@ -144,6 +154,7 @@ fun AuthPanel(
                             AuthType.BASIC -> onAuthChange(AuthConfig.Basic("", ""))
                             AuthType.BEARER -> onAuthChange(AuthConfig.Bearer(""))
                             AuthType.API_KEY -> onAuthChange(AuthConfig.ApiKey("", "", AuthConfig.ApiKey.AddTo.HEADER))
+                            AuthType.OAUTH2 -> onAuthChange(AuthConfig.OAuth2())
                         }
                     },
                     label = { Text(type.displayName) },
@@ -264,6 +275,145 @@ fun AuthPanel(
                                 )
                             },
                             label = { Text("Query Param") },
+                        )
+                    }
+                }
+            }
+
+            AuthType.OAUTH2 -> {
+                val config = auth as? AuthConfig.OAuth2 ?: AuthConfig.OAuth2()
+
+                fun update(updated: AuthConfig.OAuth2) = onAuthChange(updated)
+                val canAuthorize =
+                    config.tokenUrl.isNotBlank() &&
+                        config.clientId.isNotBlank() &&
+                        (config.grantType != OAuth2GrantType.AUTHORIZATION_CODE || config.authorizationUrl.isNotBlank())
+                val now = System.currentTimeMillis()
+                val status =
+                    when {
+                        config.accessToken.isBlank() -> {
+                            "No access token yet."
+                        }
+
+                        config.expiresAt > 0 && now >= config.expiresAt -> {
+                            "Access token expired. Authorize again."
+                        }
+
+                        config.expiresAt > 0 -> {
+                            "Access token stored; expires " +
+                                tokenExpiryFormatter.format(Instant.ofEpochMilli(config.expiresAt)) + "."
+                        }
+
+                        else -> {
+                            "Access token stored."
+                        }
+                    }
+
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = config.grantType == OAuth2GrantType.AUTHORIZATION_CODE,
+                            onClick = { update(config.copy(grantType = OAuth2GrantType.AUTHORIZATION_CODE)) },
+                            label = { Text("Authorization Code") },
+                        )
+                        FilterChip(
+                            selected = config.grantType == OAuth2GrantType.CLIENT_CREDENTIALS,
+                            onClick = { update(config.copy(grantType = OAuth2GrantType.CLIENT_CREDENTIALS)) },
+                            label = { Text("Client Credentials") },
+                        )
+                    }
+
+                    if (config.grantType == OAuth2GrantType.AUTHORIZATION_CODE) {
+                        OutlinedTextField(
+                            value = config.authorizationUrl,
+                            onValueChange = { update(config.copy(authorizationUrl = it)) },
+                            label = { Text("Authorization URL") },
+                            placeholder = { Text("https://provider.example/oauth/authorize") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                        )
+                    }
+
+                    OutlinedTextField(
+                        value = config.tokenUrl,
+                        onValueChange = { update(config.copy(tokenUrl = it)) },
+                        label = { Text("Token URL") },
+                        placeholder = { Text("https://provider.example/oauth/token") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                    )
+
+                    OutlinedTextField(
+                        value = config.clientId,
+                        onValueChange = { update(config.copy(clientId = it)) },
+                        label = { Text("Client ID") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                    )
+
+                    OutlinedTextField(
+                        value = config.clientSecret,
+                        onValueChange = { update(config.copy(clientSecret = it)) },
+                        label = { Text("Client Secret") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                    )
+
+                    OutlinedTextField(
+                        value = config.scope,
+                        onValueChange = { update(config.copy(scope = it)) },
+                        label = { Text("Scope") },
+                        placeholder = { Text("read:items write:items") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                    )
+
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Checkbox(
+                            checked = config.clientSecretInBody,
+                            onCheckedChange = { update(config.copy(clientSecretInBody = it)) },
+                        )
+                        Text("Send client secret in request body", style = MaterialTheme.typography.bodyMedium)
+                    }
+
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = { onAuthorizeOAuth2(config) },
+                            enabled = canAuthorize,
+                            modifier = Modifier.testTag("oauth2-authorize"),
+                        ) {
+                            Text(
+                                if (config.grantType == OAuth2GrantType.CLIENT_CREDENTIALS) {
+                                    "Get Token"
+                                } else {
+                                    "Authorize"
+                                },
+                            )
+                        }
+                        TextButton(
+                            onClick = { update(config.copy(accessToken = "", refreshToken = "", expiresAt = 0)) },
+                            enabled = config.accessToken.isNotBlank(),
+                        ) {
+                            Text("Clear Token")
+                        }
+                    }
+
+                    Text(
+                        text = status,
+                        style = MaterialTheme.typography.bodySmall,
+                        color =
+                            if (config.expiresAt > 0 && now >= config.expiresAt) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                    )
+                    if (config.grantType == OAuth2GrantType.AUTHORIZATION_CODE) {
+                        Text(
+                            "Authorization opens your system browser and returns through a local loopback redirect.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }

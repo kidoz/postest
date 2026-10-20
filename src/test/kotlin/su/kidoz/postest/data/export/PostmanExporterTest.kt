@@ -12,6 +12,7 @@ import su.kidoz.postest.domain.model.FormFieldType
 import su.kidoz.postest.domain.model.HttpMethod
 import su.kidoz.postest.domain.model.HttpRequest
 import su.kidoz.postest.domain.model.KeyValue
+import su.kidoz.postest.domain.model.OAuth2GrantType
 import su.kidoz.postest.domain.model.RequestBody
 import su.kidoz.postest.domain.model.RequestCollection
 import su.kidoz.postest.domain.model.Variable
@@ -538,5 +539,30 @@ class PostmanExporterTest {
         val disabled = query[0].jsonObject["disabled"]!!.jsonPrimitive.content
 
         assertEquals("true", disabled)
+    }
+
+    @Test
+    fun `OAuth2 auth round trips through Postman export and import`() {
+        val auth =
+            AuthConfig.OAuth2(
+                grantType = OAuth2GrantType.CLIENT_CREDENTIALS,
+                authorizationUrl = "https://provider.test/authorize",
+                tokenUrl = "https://provider.test/token",
+                clientId = "client",
+                clientSecret = "secret",
+                scope = "read",
+                accessToken = "token-1",
+            )
+        val request = HttpRequest(url = "https://api.example.com", auth = auth)
+        val collection =
+            RequestCollection(
+                name = "OAuth",
+                items = listOf(CollectionItem.Request(name = "Request", request = request)),
+            )
+
+        val restored = PostmanImporter().import(exporter.export(collection)).getOrThrow()
+        val restoredAuth = (restored.items.single() as CollectionItem.Request).request.auth
+
+        assertEquals(auth, restoredAuth)
     }
 }

@@ -110,7 +110,7 @@ compose.desktop {
         nativeDistributions {
             appResourcesRootDir.set(project.layout.projectDirectory.dir("resources"))
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-            modules("java.naming", "java.sql")
+            modules("java.naming", "java.sql", "jdk.httpserver")
             packageName = "Postest"
             packageVersion = "1.1.0"
             description = "A modern REST API client for testing and debugging HTTP APIs"

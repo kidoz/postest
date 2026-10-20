@@ -1,5 +1,7 @@
 package su.kidoz.postest.data.http
 
+import io.ktor.http.HttpHeaders
+import io.ktor.server.application.call
 import io.ktor.server.application.install
 import io.ktor.server.cio.CIO
 import io.ktor.server.engine.embeddedServer
@@ -13,6 +15,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import su.kidoz.postest.domain.model.AuthConfig
 import su.kidoz.postest.domain.model.ExecutionContext
 import su.kidoz.postest.domain.model.HttpRequest
 import su.kidoz.postest.domain.model.RequestProtocol
@@ -35,6 +38,9 @@ class KtorWebSocketTransportIntegrationTest {
                             for (frame in incoming) {
                                 if (frame is Frame.Text) send(Frame.Text("echo:${frame.readText()}"))
                             }
+                        }
+                        webSocket("/auth") {
+                            send(Frame.Text(call.request.headers[HttpHeaders.Authorization] ?: "missing"))
                         }
                     }
                 }.start(wait = false)
@@ -66,6 +72,52 @@ class KtorWebSocketTransportIntegrationTest {
                     val echo = withTimeout(5_000) { events.receive() }
                     assertTrue(echo is WebSocketEvent.Text)
                     assertEquals("echo:hello", echo.content)
+                } finally {
+                    collector.cancel()
+                    connection.close()
+                }
+            } finally {
+                client.close()
+                server.stop(gracePeriodMillis = 0, timeoutMillis = 1_000)
+            }
+        }
+
+    @Test
+    fun `applies OAuth2 access tokens to the websocket handshake`() =
+        runBlocking {
+            val server =
+                embeddedServer(CIO, host = "127.0.0.1", port = 0) {
+                    install(WebSockets)
+                    routing {
+                        webSocket("/auth") {
+                            send(Frame.Text(call.request.headers[HttpHeaders.Authorization] ?: "missing"))
+                        }
+                    }
+                }.start(wait = false)
+            val client = HttpClientFactory.create()
+            val port =
+                server.engine
+                    .resolvedConnectors()
+                    .first()
+                    .port
+            val transport = KtorWebSocketTransport(client, VariableResolver())
+            val events = Channel<WebSocketEvent>(Channel.UNLIMITED)
+            try {
+                val connection =
+                    transport
+                        .connect(
+                            HttpRequest(
+                                protocol = RequestProtocol.WEBSOCKET,
+                                url = "ws://127.0.0.1:$port/auth",
+                                auth = AuthConfig.OAuth2(accessToken = "ws-token"),
+                            ),
+                            ExecutionContext(),
+                        ).getOrThrow()
+                val collector = launch { connection.events.collect { events.send(it) } }
+                try {
+                    val event = withTimeout(5_000) { events.receive() }
+                    assertTrue(event is WebSocketEvent.Text)
+                    assertEquals("Bearer ws-token", event.content)
                 } finally {
                     collector.cancel()
                     connection.close()

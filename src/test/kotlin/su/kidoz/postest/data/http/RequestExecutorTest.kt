@@ -16,6 +16,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import su.kidoz.postest.domain.model.*
+import su.kidoz.postest.domain.port.OAuth2TokenProvider
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -696,6 +697,89 @@ class RequestExecutorTest {
                 )
 
             assertTrue(result.isSuccess)
+        }
+
+    @Test
+    fun `OAuth2 access token is applied as a bearer header`() =
+        runTest {
+            var authorization: String? = null
+            val mockClient =
+                createMockClient { request ->
+                    authorization = request.headers[HttpHeaders.Authorization]
+                    respond(content = "{}", status = HttpStatusCode.OK)
+                }
+            val request =
+                HttpRequest(
+                    url = "https://api.example.com/users",
+                    auth = AuthConfig.OAuth2(accessToken = "token-1", tokenType = "Bearer"),
+                )
+
+            assertTrue(RequestExecutor(mockClient).execute(request).isSuccess)
+            assertEquals("Bearer token-1", authorization)
+        }
+
+    @Test
+    fun `missing or expired OAuth2 tokens fail with fixed messages`() =
+        runTest {
+            val executor = RequestExecutor(createMockClient { respond(content = "") })
+
+            val missing = executor.execute(HttpRequest(url = "https://api.example.com", auth = AuthConfig.OAuth2()))
+            val expired =
+                executor.execute(
+                    HttpRequest(
+                        url = "https://api.example.com",
+                        auth = AuthConfig.OAuth2(accessToken = "old", expiresAt = 1),
+                    ),
+                )
+
+            assertEquals("OAuth 2.0 authorization is required", missing.exceptionOrNull()?.message)
+            assertEquals("OAuth 2.0 token has expired. Authorize again", expired.exceptionOrNull()?.message)
+        }
+
+    @Test
+    fun `OAuth2 provider refreshes and supplies the request token`() =
+        runTest {
+            var authorization: String? = null
+            val mockClient =
+                createMockClient { request ->
+                    authorization = request.headers[HttpHeaders.Authorization]
+                    respond(content = "{}", status = HttpStatusCode.OK)
+                }
+            val provider =
+                object : OAuth2TokenProvider {
+                    override suspend fun authorize(config: AuthConfig.OAuth2) = Result.success(OAuth2Token("unused"))
+
+                    override suspend fun token(config: AuthConfig.OAuth2) = Result.success(OAuth2Token("refreshed-token"))
+                }
+            val request =
+                HttpRequest(
+                    url = "https://api.example.com/users",
+                    auth = AuthConfig.OAuth2(tokenUrl = "https://provider.test/token", refreshToken = "refresh"),
+                )
+
+            assertTrue(RequestExecutor(mockClient, oauth2TokenProvider = provider).execute(request).isSuccess)
+            assertEquals("Bearer refreshed-token", authorization)
+        }
+
+    @Test
+    fun `OAuth2 tokens containing header injection are rejected`() =
+        runTest {
+            val provider =
+                object : OAuth2TokenProvider {
+                    override suspend fun authorize(config: AuthConfig.OAuth2) = Result.success(OAuth2Token("unused"))
+
+                    override suspend fun token(config: AuthConfig.OAuth2) = Result.success(OAuth2Token("line1\r\nInjected: yes"))
+                }
+            val result =
+                RequestExecutor(createMockClient { respond(content = "") }, oauth2TokenProvider = provider)
+                    .execute(
+                        HttpRequest(
+                            url = "https://api.example.com",
+                            auth = AuthConfig.OAuth2(tokenUrl = "https://provider.test/token", refreshToken = "refresh"),
+                        ),
+                    )
+
+            assertEquals("OAuth 2.0 token request failed", result.exceptionOrNull()?.message)
         }
 
     @Test

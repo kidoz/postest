@@ -24,6 +24,7 @@ import su.kidoz.postest.domain.model.HttpRequest
 import su.kidoz.postest.domain.model.HttpResponse
 import su.kidoz.postest.domain.model.RequestCollection
 import su.kidoz.postest.domain.model.ResponseTime
+import su.kidoz.postest.domain.usecase.AuthorizeOAuth2UseCase
 import su.kidoz.postest.domain.usecase.ConnectWebSocketUseCase
 import su.kidoz.postest.domain.usecase.ExecuteRequestUseCase
 import su.kidoz.postest.domain.usecase.ExportCollectionUseCase
@@ -47,6 +48,7 @@ class MainViewModelTest {
 
     private lateinit var executeRequestUseCase: ExecuteRequestUseCase
     private lateinit var connectWebSocketUseCase: ConnectWebSocketUseCase
+    private lateinit var authorizeOAuth2UseCase: AuthorizeOAuth2UseCase
     private lateinit var manageCollectionsUseCase: ManageCollectionsUseCase
     private lateinit var manageEnvironmentsUseCase: ManageEnvironmentsUseCase
     private lateinit var manageHistoryUseCase: ManageHistoryUseCase
@@ -65,6 +67,7 @@ class MainViewModelTest {
 
         executeRequestUseCase = mockk()
         connectWebSocketUseCase = mockk()
+        authorizeOAuth2UseCase = mockk()
         manageCollectionsUseCase =
             mockk {
                 every { collections } returns collectionsFlow
@@ -108,6 +111,7 @@ class MainViewModelTest {
                 MainViewModel(
                     executeRequestUseCase,
                     connectWebSocketUseCase,
+                    authorizeOAuth2UseCase,
                     manageCollectionsUseCase,
                     manageEnvironmentsUseCase,
                     manageHistoryUseCase,
@@ -135,6 +139,7 @@ class MainViewModelTest {
                 MainViewModel(
                     executeRequestUseCase,
                     connectWebSocketUseCase,
+                    authorizeOAuth2UseCase,
                     manageCollectionsUseCase,
                     manageEnvironmentsUseCase,
                     manageHistoryUseCase,
@@ -176,6 +181,38 @@ class MainViewModelTest {
             coVerify(exactly = 1) { connectWebSocketUseCase.connect(any(), any()) }
         }
 
+    @Test
+    fun `OAuth2 authorization stores the token on the active tab`() =
+        runTest(testDispatcher) {
+            coEvery { authorizeOAuth2UseCase.authorize(any(), any()) } returns
+                Result.success(
+                    su.kidoz.postest.domain.model
+                        .OAuth2Token(accessToken = "token-1", expiresAt = 123),
+                )
+            val viewModel = createViewModel()
+            testScheduler.advanceUntilIdle()
+            viewModel.updateRequest(
+                HttpRequest(
+                    url = "https://api.example.test",
+                    auth =
+                        su.kidoz.postest.domain.model.AuthConfig.OAuth2(
+                            tokenUrl = "https://provider.test/token",
+                            clientId = "client",
+                        ),
+                ),
+            )
+
+            viewModel.authorizeOAuth2()
+            testScheduler.advanceUntilIdle()
+
+            val auth =
+                viewModel.state.value.activeTab
+                    ?.request
+                    ?.auth as su.kidoz.postest.domain.model.AuthConfig.OAuth2
+            assertEquals("token-1", auth.accessToken)
+            assertEquals(123, auth.expiresAt)
+        }
+
     @AfterTest
     fun tearDown() {
         Dispatchers.resetMain()
@@ -185,6 +222,7 @@ class MainViewModelTest {
         MainViewModel(
             executeRequestUseCase,
             connectWebSocketUseCase,
+            authorizeOAuth2UseCase,
             manageCollectionsUseCase,
             manageEnvironmentsUseCase,
             manageHistoryUseCase,

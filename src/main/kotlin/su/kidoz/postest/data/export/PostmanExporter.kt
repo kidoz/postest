@@ -28,6 +28,7 @@ import su.kidoz.postest.domain.model.CollectionItem
 import su.kidoz.postest.domain.model.FormFieldType
 import su.kidoz.postest.domain.model.HttpRequest
 import su.kidoz.postest.domain.model.KeyValue
+import su.kidoz.postest.domain.model.OAuth2GrantType
 import su.kidoz.postest.domain.model.RequestBody
 import su.kidoz.postest.domain.model.RequestCollection
 import su.kidoz.postest.domain.model.Variable
@@ -367,6 +368,31 @@ class PostmanExporter {
                                     },
                                 type = "string",
                             ),
+                        ),
+                )
+            }
+
+            is AuthConfig.OAuth2 -> {
+                PostmanAuth(
+                    type = "oauth2",
+                    oauth2 =
+                        listOf(
+                            PostmanAuthParam(
+                                key = "grant_type",
+                                value =
+                                    when (auth.grantType) {
+                                        OAuth2GrantType.AUTHORIZATION_CODE -> "authorization_code"
+                                        OAuth2GrantType.CLIENT_CREDENTIALS -> "client_credentials"
+                                    },
+                                type = "string",
+                            ),
+                            PostmanAuthParam(key = "authUrl", value = auth.authorizationUrl, type = "string"),
+                            PostmanAuthParam(key = "accessTokenUrl", value = auth.tokenUrl, type = "string"),
+                            PostmanAuthParam(key = "clientId", value = auth.clientId, type = "string"),
+                            PostmanAuthParam(key = "clientSecret", value = auth.clientSecret, type = "string"),
+                            PostmanAuthParam(key = "scope", value = auth.scope, type = "string"),
+                            PostmanAuthParam(key = "accessToken", value = auth.accessToken, type = "string"),
+                            PostmanAuthParam(key = "tokenType", value = auth.tokenType, type = "string"),
                         ),
                 )
             }

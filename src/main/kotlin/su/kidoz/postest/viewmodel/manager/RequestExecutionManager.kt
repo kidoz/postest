@@ -9,6 +9,7 @@ import kotlinx.coroutines.launch
 import su.kidoz.postest.domain.model.ExecutionContext
 import su.kidoz.postest.domain.model.HistoryEntry
 import su.kidoz.postest.domain.model.HttpRequest
+import su.kidoz.postest.domain.model.OAuth2Exception
 import su.kidoz.postest.domain.model.RequestFailureException
 import su.kidoz.postest.domain.model.Variable
 import su.kidoz.postest.domain.usecase.ExecuteRequestUseCase
@@ -95,6 +96,7 @@ class RequestExecutionManager(
         when (error) {
             is CancellationException -> throw error
             is RequestFailureException -> error.reason.description
+            is OAuth2Exception -> error.failure.description
             else -> "Network error"
         }
 

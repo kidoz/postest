@@ -11,6 +11,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import su.kidoz.postest.domain.model.ExecutionContext
 import su.kidoz.postest.domain.model.HttpRequest
+import su.kidoz.postest.domain.model.OAuth2Exception
 import su.kidoz.postest.domain.model.RequestFailureException
 import su.kidoz.postest.domain.model.WebSocketDirection
 import su.kidoz.postest.domain.model.WebSocketMessage
@@ -258,6 +259,7 @@ class WebSocketManager(
     private fun publicMessage(error: Throwable): String =
         when (error) {
             is RequestFailureException -> error.reason.description
+            is OAuth2Exception -> error.failure.description
             else -> "Connection failed"
         }
 }

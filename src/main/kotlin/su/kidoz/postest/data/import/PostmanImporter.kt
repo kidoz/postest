@@ -316,6 +316,27 @@ class PostmanImporter {
                 )
             }
 
+            "oauth2" -> {
+                fun param(vararg keys: String): String =
+                    keys.firstNotNullOfOrNull { key -> auth.oauth2?.find { it.key == key }?.value }
+                        ?: ""
+                AuthConfig.OAuth2(
+                    grantType =
+                        if (param("grant_type") == "client_credentials") {
+                            OAuth2GrantType.CLIENT_CREDENTIALS
+                        } else {
+                            OAuth2GrantType.AUTHORIZATION_CODE
+                        },
+                    authorizationUrl = param("authUrl", "authorizationUrl"),
+                    tokenUrl = param("accessTokenUrl", "tokenUrl"),
+                    clientId = param("clientId"),
+                    clientSecret = param("clientSecret"),
+                    scope = param("scope"),
+                    accessToken = param("accessToken", "access_token"),
+                    tokenType = param("tokenType").ifBlank { "Bearer" },
+                )
+            }
+
             else -> {
                 logger.warn { "Unsupported auth type '${auth.type}', skipping" }
                 null

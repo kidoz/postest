@@ -38,6 +38,7 @@ import su.kidoz.postest.domain.model.RequestFailure
 import su.kidoz.postest.domain.model.RequestOutcome
 import su.kidoz.postest.domain.model.ResponseTime
 import su.kidoz.postest.domain.model.Variable
+import su.kidoz.postest.domain.port.OAuth2TokenProvider
 import su.kidoz.postest.domain.port.RequestTransport
 import su.kidoz.postest.util.VariableResolver
 import java.net.URI
@@ -59,6 +60,7 @@ private data class ResolutionContext(
 class RequestExecutor(
     private val client: HttpClient,
     private val variableResolver: VariableResolver = VariableResolver(),
+    private val oauth2TokenProvider: OAuth2TokenProvider? = null,
 ) : RequestTransport {
     private fun ResolutionContext.resolve(value: String): String = variableResolver.resolve(value, environment, collectionVariables)
 
@@ -283,7 +285,7 @@ class RequestExecutor(
         return urlWithoutFragment + separator + queryString + fragment
     }
 
-    private fun applyAuth(
+    private suspend fun applyAuth(
         auth: AuthConfig,
         context: ResolutionContext,
         builder: HttpRequestBuilder,
@@ -319,6 +321,11 @@ class RequestExecutor(
                         }
                     }
                 }
+            }
+
+            is AuthConfig.OAuth2 -> {
+                val token = resolveOAuth2Token(auth, oauth2TokenProvider, resolve = { context.resolve(it) })
+                builder.headers.append(HttpHeaders.Authorization, oauth2Authorization(token))
             }
         }
     }
