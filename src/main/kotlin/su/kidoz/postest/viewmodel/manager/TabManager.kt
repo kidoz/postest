@@ -159,10 +159,14 @@ class TabManager(
 
     /**
      * Opens a request in a new tab.
+     * @param collectionItemId the collection item the request was opened from, if any
      * @return ID of the newly created tab
      */
-    fun openRequest(request: HttpRequest): String {
-        val newTab = TabState(request = request)
+    fun openRequest(
+        request: HttpRequest,
+        collectionItemId: String? = null,
+    ): String {
+        val newTab = TabState(request = request, collectionItemId = collectionItemId)
         stateUpdater.update { state ->
             state.copy(
                 tabs = state.tabs + newTab,

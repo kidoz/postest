@@ -40,6 +40,7 @@ private val logger = KotlinLogging.logger {}
 data class TabState(
     val id: String = UUID.randomUUID().toString(),
     val request: HttpRequest = HttpRequest(),
+    val collectionItemId: String? = null,
     val response: su.kidoz.postest.domain.model.HttpResponse? = null,
     val isLoading: Boolean = false,
     val isDirty: Boolean = false,
@@ -205,8 +206,11 @@ class MainViewModel(
         tabManager.selectTab(tabId)
     }
 
-    fun openRequest(request: HttpRequest) {
-        tabManager.openRequest(request)
+    fun openRequest(
+        request: HttpRequest,
+        collectionItemId: String? = null,
+    ) {
+        tabManager.openRequest(request, collectionItemId)
     }
 
     fun openHistoryEntry(entry: HistoryEntry) {
@@ -256,6 +260,18 @@ class MainViewModel(
     ) {
         val activeTab = tabManager.getActiveTab() ?: return
         collectionManager.addRequestToCollection(collection.id, activeTab.request, requestName)
+    }
+
+    fun addFolderToCollection(
+        collectionId: String,
+        name: String,
+        parentFolderId: String? = null,
+    ) {
+        collectionManager.addFolderToCollection(collectionId, name, parentFolderId)
+    }
+
+    fun moveCollectionItemToCollectionRoot(itemId: String) {
+        collectionManager.moveCollectionItemToCollectionRoot(itemId)
     }
 
     fun deleteCollectionItem(itemId: String) {

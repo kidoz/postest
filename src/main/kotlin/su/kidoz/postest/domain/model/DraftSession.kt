@@ -15,4 +15,5 @@ data class DraftTab(
     val request: HttpRequest,
     val isDirty: Boolean,
     val bodyDrafts: List<RequestBody> = emptyList(),
+    val collectionItemId: String? = null,
 )

@@ -72,6 +72,7 @@ class SessionManager(
                 TabState(
                     id = tab.id,
                     request = tab.request,
+                    collectionItemId = tab.collectionItemId,
                     isDirty = tab.isDirty,
                     bodyDrafts = tab.bodyDrafts.associateBy { it::class },
                 )
@@ -116,7 +117,13 @@ class SessionManager(
                 app.tabs.map { tab ->
                     val activeType = (tab.request.body ?: RequestBody.None)::class
                     val inactiveDrafts = tab.bodyDrafts.values.filter { it::class != activeType && it !is RequestBody.None }
-                    DraftTab(tab.id, tab.request, tab.isDirty, inactiveDrafts)
+                    DraftTab(
+                        id = tab.id,
+                        request = tab.request,
+                        isDirty = tab.isDirty,
+                        bodyDrafts = inactiveDrafts,
+                        collectionItemId = tab.collectionItemId,
+                    )
                 },
             activeTabId = app.activeTabId,
         )

@@ -115,6 +115,35 @@ class CollectionManager(
     }
 
     /**
+     * Adds a folder to a collection, optionally nested inside another folder.
+     */
+    fun addFolderToCollection(
+        collectionId: String,
+        name: String,
+        parentFolderId: String? = null,
+    ) {
+        scope.launch {
+            val folderName = name.ifBlank { "New Folder" }
+            manageCollectionsUseCase.addFolderToCollection(
+                collectionId = collectionId,
+                name = folderName,
+                parentFolderId = parentFolderId,
+            )
+            sideEffectEmitter.emit(AppSideEffect.ShowToast("Folder '$folderName' created"))
+        }
+    }
+
+    /**
+     * Moves a collection item (request or folder) to the collection root.
+     */
+    fun moveCollectionItemToCollectionRoot(itemId: String) {
+        scope.launch {
+            manageCollectionsUseCase.moveCollectionItemToCollectionRoot(itemId)
+            sideEffectEmitter.emit(AppSideEffect.ShowToast("Moved to collection root"))
+        }
+    }
+
+    /**
      * Deletes a collection item (request or folder).
      */
     fun deleteCollectionItem(itemId: String) {

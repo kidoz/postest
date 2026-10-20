@@ -25,6 +25,16 @@ class CollectionRepository(
     private val _collections = MutableStateFlow<List<RequestCollection>>(emptyList())
     val collections: Flow<List<RequestCollection>> = _collections.asStateFlow()
 
+    /**
+     * Applies an incremental change and keeps the in-memory order aligned with
+     * [loadCollections], which orders by `updated_at` descending.
+     */
+    private fun updateCollections(transform: (List<RequestCollection>) -> List<RequestCollection>) {
+        _collections.update { currentList ->
+            transform(currentList).sortedByDescending { it.updatedAt }
+        }
+    }
+
     suspend fun loadCollections() =
         withContext(Dispatchers.IO) {
             val dbCollections = database.postestQueries.selectAllCollections().executeAsList()
@@ -115,7 +125,7 @@ class CollectionRepository(
             )
 
             // Incremental update: append new collection
-            _collections.update { currentList ->
+            updateCollections { currentList ->
                 currentList + collection
             }
 
@@ -137,7 +147,7 @@ class CollectionRepository(
             )
 
             // Incremental update: replace the updated collection
-            _collections.update { currentList ->
+            updateCollections { currentList ->
                 currentList.map { c ->
                     if (c.id == collection.id) collection else c
                 }
@@ -153,7 +163,7 @@ class CollectionRepository(
             database.postestQueries.deleteCollection(collectionId)
 
             // Incremental update: remove the deleted collection
-            _collections.update { currentList ->
+            updateCollections { currentList ->
                 currentList.filter { it.id != collectionId }
             }
         }
@@ -201,6 +211,7 @@ class CollectionRepository(
                     .executeAsList()
                     .size
 
+            val updatedAt = System.currentTimeMillis()
             database.postestQueries.insertCollectionItem(
                 id = item.id,
                 collection_id = collectionId,
@@ -211,14 +222,15 @@ class CollectionRepository(
                 request_json = json.encodeToString(request),
                 position = position.toLong(),
             )
+            database.postestQueries.touchCollection(updatedAt, collectionId)
 
             // Incremental update: add item to collection's nested structure
-            _collections.update { currentList ->
+            updateCollections { currentList ->
                 currentList.map { c ->
                     if (c.id == collectionId) {
                         c.copy(
                             items = addItemToCollection(c.items, item, parentFolderId),
-                            updatedAt = System.currentTimeMillis(),
+                            updatedAt = updatedAt,
                         )
                     } else {
                         c
@@ -253,6 +265,7 @@ class CollectionRepository(
                     .executeAsList()
                     .size
 
+            val updatedAt = System.currentTimeMillis()
             database.postestQueries.insertCollectionItem(
                 id = folder.id,
                 collection_id = collectionId,
@@ -263,14 +276,15 @@ class CollectionRepository(
                 request_json = null,
                 position = position.toLong(),
             )
+            database.postestQueries.touchCollection(updatedAt, collectionId)
 
             // Incremental update: add folder to collection's nested structure
-            _collections.update { currentList ->
+            updateCollections { currentList ->
                 currentList.map { c ->
                     if (c.id == collectionId) {
                         c.copy(
                             items = addItemToCollection(c.items, folder, parentFolderId),
-                            updatedAt = System.currentTimeMillis(),
+                            updatedAt = updatedAt,
                         )
                     } else {
                         c
@@ -282,19 +296,58 @@ class CollectionRepository(
         }
 
     /**
+     * Moves a collection item (request or folder) to the root of its collection.
+     * No-op when the item is already at the root.
+     */
+    suspend fun moveCollectionItemToCollectionRoot(itemId: String) =
+        withContext(Dispatchers.IO) {
+            val item =
+                database.postestQueries.selectCollectionItemById(itemId).executeAsOneOrNull()
+                    ?: return@withContext
+            if (item.parent_folder_id == null) return@withContext
+
+            val collectionId = item.collection_id
+            val rootPosition =
+                (
+                    database.postestQueries
+                        .selectRootItemsByCollectionId(collectionId)
+                        .executeAsList()
+                        .maxOfOrNull { it.position } ?: -1L
+                ) + 1L
+
+            val updatedAt = System.currentTimeMillis()
+            database.postestQueries.moveCollectionItemToCollectionRoot(rootPosition, itemId)
+            database.postestQueries.touchCollection(updatedAt, collectionId)
+
+            // Incremental update: move item to the end of the collection root
+            updateCollections { currentList ->
+                currentList.map { c ->
+                    if (c.id == collectionId) {
+                        c.copy(items = moveItemToRoot(c.items, itemId), updatedAt = updatedAt)
+                    } else {
+                        c
+                    }
+                }
+            }
+        }
+
+    /**
      * Deletes a collection item (request or folder).
      * Uses incremental update - removes from nested structure instead of full reload.
      */
     suspend fun deleteCollectionItem(itemId: String) =
         withContext(Dispatchers.IO) {
+            val item = database.postestQueries.selectCollectionItemById(itemId).executeAsOneOrNull()
             database.postestQueries.deleteCollectionItem(itemId)
+            val updatedAt = System.currentTimeMillis()
+            item?.let { database.postestQueries.touchCollection(updatedAt, it.collection_id) }
 
             // Incremental update: remove item from all collections' nested structures
-            _collections.update { currentList ->
+            updateCollections { currentList ->
                 currentList.map { c ->
                     val newItems = removeItemFromCollection(c.items, itemId)
                     if (newItems != c.items) {
-                        c.copy(items = newItems, updatedAt = System.currentTimeMillis())
+                        c.copy(items = newItems, updatedAt = updatedAt)
                     } else {
                         c
                     }
@@ -310,14 +363,17 @@ class CollectionRepository(
         itemId: String,
         newName: String,
     ) = withContext(Dispatchers.IO) {
+        val item = database.postestQueries.selectCollectionItemById(itemId).executeAsOneOrNull()
         database.postestQueries.renameCollectionItem(newName, itemId)
+        val updatedAt = System.currentTimeMillis()
+        item?.let { database.postestQueries.touchCollection(updatedAt, it.collection_id) }
 
         // Incremental update: rename item in all collections' nested structures
-        _collections.update { currentList ->
+        updateCollections { currentList ->
             currentList.map { c ->
                 val newItems = renameItemInCollection(c.items, itemId, newName)
                 if (newItems != c.items) {
-                    c.copy(items = newItems, updatedAt = System.currentTimeMillis())
+                    c.copy(items = newItems, updatedAt = updatedAt)
                 } else {
                     c
                 }
@@ -348,7 +404,7 @@ class CollectionRepository(
             insertItemsRecursively(collection.id, collection.items, parentFolderId = null)
 
             // Incremental update: append imported collection
-            _collections.update { currentList ->
+            updateCollections { currentList ->
                 currentList + collection
             }
 
@@ -424,6 +480,33 @@ class CollectionRepository(
                         item
                     }
                 }
+            }
+        }
+
+    /**
+     * Moves a nested item to the end of the collection's root level.
+     * Returns the original list when the item is missing or already at the root.
+     */
+    private fun moveItemToRoot(
+        items: List<CollectionItem>,
+        itemId: String,
+    ): List<CollectionItem> {
+        if (items.any { it.id == itemId }) return items
+        val item = findItem(items, itemId) ?: return items
+        return removeItemFromCollection(items, itemId) + item
+    }
+
+    /**
+     * Finds an item in a collection's nested structure by ID.
+     */
+    private fun findItem(
+        items: List<CollectionItem>,
+        itemId: String,
+    ): CollectionItem? =
+        items.firstNotNullOfOrNull { item ->
+            when (item) {
+                is CollectionItem.Request -> item.takeIf { it.id == itemId }
+                is CollectionItem.Folder -> if (item.id == itemId) item else findItem(item.items, itemId)
             }
         }
 

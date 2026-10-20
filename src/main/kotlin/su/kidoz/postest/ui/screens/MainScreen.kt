@@ -115,10 +115,13 @@ fun MainScreen(
                         history = state.history,
                         environments = state.environments,
                         selectedEnvironmentId = state.activeEnvironmentId,
-                        selectedRequestId = state.activeTab?.request?.id,
+                        selectedCollectionItemId = state.activeTab?.collectionItemId,
                         onRequestClick = { request ->
                             // Use the collection item's name for the request
-                            viewModel.openRequest(request.request.copy(name = request.name))
+                            viewModel.openRequest(
+                                request = request.request.copy(name = request.name),
+                                collectionItemId = request.id,
+                            )
                         },
                         onHistoryClick = { entry ->
                             viewModel.openHistoryEntry(entry)
@@ -129,6 +132,9 @@ fun MainScreen(
                             addRequestTargetCollection = collection
                             newRequestName = state.activeTab?.request?.name ?: ""
                             showAddRequestDialog = true
+                        },
+                        onCreateFolder = { collectionId, parentFolderId, name ->
+                            viewModel.addFolderToCollection(collectionId, name, parentFolderId)
                         },
                         onImportCollection = openImportDialog,
                         onExportCollection = openExportDialog,
@@ -143,6 +149,9 @@ fun MainScreen(
                         },
                         onDeleteItem = { item ->
                             viewModel.deleteCollectionItem(item.id)
+                        },
+                        onRemoveFromFolder = { item ->
+                            viewModel.moveCollectionItemToCollectionRoot(item.id)
                         },
                         onClearHistory = { viewModel.clearHistory() },
                         onEnvironmentSelect = { viewModel.selectEnvironment(it) },

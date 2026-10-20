@@ -136,4 +136,18 @@ class TabManagerTest {
         manager.updateRequest(id, state.activeTab!!.request.copy(url = "/changed"))
         assertTrue(state.activeTab!!.isDirty)
     }
+
+    @Test
+    fun `openRequest remembers the collection item it was opened from`() {
+        val tabId = manager.openRequest(HttpRequest(url = "https://example.test/item"), collectionItemId = "item-1")
+        assertEquals("item-1", state.activeTab?.collectionItemId)
+        manager.updateRequest(tabId, state.activeTab!!.request.copy(url = "https://example.test/edited"))
+        assertEquals("item-1", state.activeTab?.collectionItemId)
+    }
+
+    @Test
+    fun `new tabs are not linked to a collection item`() {
+        manager.newTab()
+        assertNull(state.activeTab?.collectionItemId)
+    }
 }

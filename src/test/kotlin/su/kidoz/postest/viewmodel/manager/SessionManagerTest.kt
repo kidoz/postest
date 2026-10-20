@@ -278,4 +278,37 @@ class SessionManagerTest {
             assertTrue(closing.await())
             coVerify(exactly = 1) { useCase.save(match { it.tabs.single().id == "saved" }) }
         }
+
+    @Test
+    fun `restore keeps the collection item linked to a tab`() =
+        runTest {
+            coEvery { useCase.load() } returns
+                DraftSession(
+                    tabs = listOf(DraftTab(id = "tab", request = HttpRequest(), isDirty = false, collectionItemId = "item-1")),
+                    activeTabId = "tab",
+                )
+            manager(backgroundScope).initialize()
+            runCurrent()
+            assertEquals(
+                "item-1",
+                state.value.tabs
+                    .single()
+                    .collectionItemId,
+            )
+        }
+
+    @Test
+    fun `autosave keeps the collection item link`() =
+        runTest {
+            val linked = initial.copy(collectionItemId = "item-1", request = initial.request.copy(url = "/linked"))
+            state.value = state.value.copy(tabs = listOf(linked))
+            val manager = manager(backgroundScope)
+            manager.initialize()
+            runCurrent()
+            state.value = state.value.copy(tabs = listOf(linked.copy(request = linked.request.copy(url = "/edited"))))
+            runCurrent()
+            advanceTimeBy(301)
+            runCurrent()
+            coVerify { useCase.save(match { it.tabs.single().collectionItemId == "item-1" }) }
+        }
 }

@@ -13,6 +13,7 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import su.kidoz.postest.domain.model.CollectionItem
 import su.kidoz.postest.domain.model.Environment
 import su.kidoz.postest.domain.model.HistoryEntry
 import su.kidoz.postest.domain.model.HttpMethod
@@ -325,6 +326,24 @@ class MainViewModelTest {
         }
 
     @Test
+    fun `openRequest should remember the collection item id`() =
+        runTest {
+            val viewModel = createViewModel()
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            viewModel.openRequest(
+                HttpRequest(url = "https://api.example.com/users"),
+                collectionItemId = "item-1",
+            )
+
+            assertEquals(
+                "item-1",
+                viewModel.state.value.activeTab
+                    ?.collectionItemId,
+            )
+        }
+
+    @Test
     fun `openHistoryEntry should create tab with request and response`() =
         runTest {
             val viewModel = createViewModel()
@@ -398,6 +417,27 @@ class MainViewModelTest {
 
             coVerify { manageCollectionsUseCase.createCollection("Test Collection") }
             assertFalse(viewModel.state.value.showNewCollectionDialog)
+        }
+
+    @Test
+    fun `folder and move operations should call use case`() =
+        runTest {
+            val viewModel = createViewModel()
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            coEvery {
+                manageCollectionsUseCase.addFolderToCollection(any(), any(), any(), any())
+            } returns CollectionItem.Folder(name = "Folder")
+            coEvery { manageCollectionsUseCase.moveCollectionItemToCollectionRoot(any()) } returns Unit
+
+            viewModel.addFolderToCollection("collection-1", "Folder", "folder-1")
+            viewModel.moveCollectionItemToCollectionRoot("item-1")
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            coVerify {
+                manageCollectionsUseCase.addFolderToCollection("collection-1", "Folder", "", "folder-1")
+            }
+            coVerify { manageCollectionsUseCase.moveCollectionItemToCollectionRoot("item-1") }
         }
 
     @Test

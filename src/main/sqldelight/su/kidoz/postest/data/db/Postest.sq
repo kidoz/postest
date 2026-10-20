@@ -72,9 +72,15 @@ UPDATE Collection SET name = ?, updated_at = ? WHERE id = ?;
 deleteCollection:
 DELETE FROM Collection WHERE id = ?;
 
+touchCollection:
+UPDATE Collection SET updated_at = ? WHERE id = ?;
+
 -- Collection Item Queries
 selectItemsByCollectionId:
 SELECT * FROM CollectionItem WHERE collection_id = ? ORDER BY position;
+
+selectCollectionItemById:
+SELECT * FROM CollectionItem WHERE id = ?;
 
 selectItemsByParentFolderId:
 SELECT * FROM CollectionItem WHERE parent_folder_id = ? ORDER BY position;
@@ -91,6 +97,9 @@ UPDATE CollectionItem SET name = ?, description = ?, request_json = ?, position 
 
 renameCollectionItem:
 UPDATE CollectionItem SET name = ? WHERE id = ?;
+
+moveCollectionItemToCollectionRoot:
+UPDATE CollectionItem SET parent_folder_id = NULL, position = ? WHERE id = ?;
 
 deleteCollectionItem:
 DELETE FROM CollectionItem WHERE id = ?;
