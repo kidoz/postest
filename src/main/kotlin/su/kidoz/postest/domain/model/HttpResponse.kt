@@ -11,7 +11,21 @@ data class HttpResponse(
     val contentType: String?,
     val size: Long,
     val time: ResponseTime,
+    val truncated: Boolean = false,
 )
+
+/** Maximum response body retained in history and workspace snapshots. */
+const val MAX_PERSISTED_RESPONSE_BYTES: Int = 1_000_000
+
+/** Returns a copy whose body is capped for local persistence. */
+fun HttpResponse.limitBodyForStorage(maxBytes: Int = MAX_PERSISTED_RESPONSE_BYTES): HttpResponse {
+    val bytes = body.toByteArray(Charsets.UTF_8)
+    if (bytes.size <= maxBytes) return this
+    return copy(
+        body = bytes.copyOf(maxBytes).toString(Charsets.UTF_8),
+        truncated = true,
+    )
+}
 
 @Serializable
 data class ResponseTime(

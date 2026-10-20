@@ -9,15 +9,18 @@ import io.ktor.client.request.forms.formData
 import io.ktor.client.request.request
 import io.ktor.client.request.setBody
 import io.ktor.client.request.url
-import io.ktor.client.statement.bodyAsText
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.Parameters
+import io.ktor.http.charset
 import io.ktor.http.contentType
 import io.ktor.http.encodeURLParameter
+import io.ktor.utils.io.readRemaining
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.io.readByteArray
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -31,6 +34,7 @@ import su.kidoz.postest.domain.model.HttpRequest
 import su.kidoz.postest.domain.model.HttpResponse
 import su.kidoz.postest.domain.model.RequestBody
 import su.kidoz.postest.domain.model.ResponseTime
+import su.kidoz.postest.domain.model.Variable
 import su.kidoz.postest.util.VariableResolver
 import java.net.URI
 import java.nio.file.Paths
@@ -40,21 +44,32 @@ import io.ktor.http.HttpMethod as KtorHttpMethod
 private val logger = KotlinLogging.logger {}
 private val json = Json { ignoreUnknownKeys = true }
 
+private const val MAX_RESPONSE_BYTES = 10L * 1024 * 1024
+
+private data class ResolutionContext(
+    val environment: Environment?,
+    val collectionVariables: List<Variable>,
+)
+
 class RequestExecutor(
     private val client: HttpClient,
     private val variableResolver: VariableResolver = VariableResolver(),
 ) {
+    private fun ResolutionContext.resolve(value: String): String = variableResolver.resolve(value, environment, collectionVariables)
+
     suspend fun execute(
         request: HttpRequest,
         environment: Environment? = null,
+        collectionVariables: List<Variable> = emptyList(),
     ): Result<HttpResponse> {
-        val resolvedUrl = buildUrl(request, environment)
+        val context = ResolutionContext(environment, collectionVariables)
+        val resolvedUrl = buildUrl(request, context)
 
         // Validate URL is parseable
         val uri =
-            runCatching { URI(resolvedUrl) }.getOrElse { e ->
-                logger.error { "Invalid URL: $resolvedUrl - ${e.message}" }
-                return Result.failure(IllegalArgumentException("Invalid URL: ${e.message}"))
+            runCatching { URI(resolvedUrl) }.getOrElse {
+                logger.warn { "Invalid URL for ${request.method} request" }
+                return Result.failure(IllegalArgumentException("Invalid URL"))
             }
 
         val host = uri.host ?: ""
@@ -62,7 +77,7 @@ class RequestExecutor(
 
         // Validate headers for potential injection issues - throws on security violations
         request.headers.filter { it.enabled && it.key.isNotBlank() }.forEach { header ->
-            val validationError = validateHeader(header.key, header.value, environment)
+            val validationError = validateHeader(header.key, header.value, context)
             if (validationError != null) {
                 return Result.failure(SecurityException(validationError))
             }
@@ -70,9 +85,9 @@ class RequestExecutor(
 
         // Resolve client certificate if needed
         val certClient =
-            runCatching { resolveClientCertificate(request.clientCertificate, environment) }.getOrElse { e ->
-                logger.error(e) { "Failed to load client certificate: ${e.message}" }
-                return Result.failure(e)
+            runCatching { resolveClientCertificate(request.clientCertificate, context) }.getOrElse { e ->
+                logger.error { "Failed to load client certificate (${e::class.simpleName})" }
+                return Result.failure(IllegalArgumentException("Client certificate could not be loaded"))
             }
 
         return runCatching {
@@ -80,29 +95,42 @@ class RequestExecutor(
             val effectiveClient = certClient ?: client
 
             // Read binary body off the calling thread before building the request
-            val binaryBody = (request.body as? RequestBody.Binary)?.let { loadBinaryBody(it, environment) }
+            val binaryBody = (request.body as? RequestBody.Binary)?.let { loadBinaryBody(it, context) }
+            val sensitiveHeaders = mutableSetOf<String>()
 
             val response =
                 effectiveClient.request(resolvedUrl) {
                     this.method = request.method.toKtorMethod()
+                    attributes.put(OriginalRequestAuthority, url.authorityKey())
+                    attributes.put(SensitiveRequestHeaders, sensitiveHeaders)
 
                     // Apply headers
                     request.headers
                         .filter { it.enabled && it.key.isNotBlank() }
                         .forEach { header ->
-                            val headerKey = variableResolver.resolve(header.key, environment)
-                            val headerValue = variableResolver.resolve(header.value, environment)
+                            val headerKey = context.resolve(header.key)
+                            val headerValue = context.resolve(header.value)
                             this.headers.append(headerKey, headerValue)
                         }
 
                     // Apply authentication
                     request.auth?.let { authConfig ->
-                        applyAuth(authConfig, environment, this)
+                        applyAuth(authConfig, context, this, sensitiveHeaders)
                     }
 
                     // Apply body
                     request.body?.let { requestBody ->
-                        setRequestBody(requestBody, environment, this, binaryBody)
+                        val hasExplicitContentType =
+                            request.headers.any {
+                                it.enabled && it.key.equals(HttpHeaders.ContentType, ignoreCase = true)
+                            }
+                        setRequestBody(
+                            requestBody,
+                            context,
+                            this,
+                            binaryBody,
+                            applyDefaultContentType = !hasExplicitContentType,
+                        )
                     }
                 }
 
@@ -110,8 +138,18 @@ class RequestExecutor(
             val firstByteTime = System.currentTimeMillis()
             val timeToFirstByte = firstByteTime - startTime
 
-            // Read body and measure download time
-            val bodyText = response.bodyAsText()
+            // Read body with a hard limit so a large response cannot exhaust memory
+            val bodyPacket = response.bodyAsChannel().readRemaining(MAX_RESPONSE_BYTES + 1)
+            val receivedBytes = bodyPacket.readByteArray()
+            val truncated = receivedBytes.size > MAX_RESPONSE_BYTES
+            val bodyBytes =
+                if (truncated) {
+                    receivedBytes.copyOf(MAX_RESPONSE_BYTES.toInt())
+                } else {
+                    receivedBytes
+                }
+            val charset = response.contentType()?.charset() ?: Charsets.UTF_8
+            val bodyText = bodyBytes.toString(charset)
             val downloadEndTime = System.currentTimeMillis()
             val downloadTime = downloadEndTime - firstByteTime
 
@@ -124,13 +162,14 @@ class RequestExecutor(
                     headers = response.headers.entries().associate { it.key to it.value },
                     body = bodyText,
                     contentType = response.headers[HttpHeaders.ContentType],
-                    size = bodyText.toByteArray().size.toLong(),
+                    size = bodyBytes.size.toLong(),
                     time =
                         ResponseTime(
                             total = totalTime,
                             firstByte = timeToFirstByte,
                             download = downloadTime,
                         ),
+                    truncated = truncated,
                 )
 
             logger.info {
@@ -143,74 +182,81 @@ class RequestExecutor(
         }.onFailure { error ->
             // Cancellation must propagate instead of surfacing as a request failure
             if (error is CancellationException) throw error
-            logger.error(error) { "Request failed to host: $host - ${error.message}" }
+            logger.error { "Request failed for ${request.method} to host: $host (${error::class.simpleName})" }
         }
     }
 
     private suspend fun resolveClientCertificate(
         certConfig: ClientCertConfig?,
-        environment: Environment?,
+        context: ResolutionContext,
     ): HttpClient? {
         if (certConfig == null) return null
 
-        val certPath = variableResolver.resolve(certConfig.certPath, environment)
-        val keyPath = variableResolver.resolve(certConfig.keyPath, environment)
-        val passphrase = variableResolver.resolve(certConfig.passphrase, environment)
+        val certPath = context.resolve(certConfig.certPath)
+        val keyPath = context.resolve(certConfig.keyPath)
+        val passphrase = context.resolve(certConfig.passphrase)
 
-        logger.info { "Loading client certificate for mTLS from: $certPath" }
+        logger.info { "Loading client certificate for mTLS" }
         val certAndKey = withContext(Dispatchers.IO) { CertificateLoader.load(certPath, keyPath, passphrase) }
         return HttpClientFactory.createWithClientCertificate(certAndKey)
     }
 
     private fun buildUrl(
         request: HttpRequest,
-        environment: Environment?,
+        context: ResolutionContext,
     ): String {
-        val baseUrl = variableResolver.resolve(request.url, environment)
+        val baseUrl = context.resolve(request.url)
 
         val enabledParams = request.queryParams.filter { it.enabled && it.key.isNotBlank() }
         if (enabledParams.isEmpty()) return baseUrl
 
         val queryString =
             enabledParams.joinToString("&") { param ->
-                val paramKey = variableResolver.resolve(param.key, environment).encodeURLParameter()
-                val paramValue = variableResolver.resolve(param.value, environment).encodeURLParameter()
+                val paramKey = context.resolve(param.key).encodeURLParameter()
+                val paramValue = context.resolve(param.value).encodeURLParameter()
                 "$paramKey=$paramValue"
             }
 
-        return if (baseUrl.contains("?")) {
-            "$baseUrl&$queryString"
-        } else {
-            "$baseUrl?$queryString"
-        }
+        val fragmentIndex = baseUrl.indexOf('#')
+        val urlWithoutFragment = if (fragmentIndex >= 0) baseUrl.substring(0, fragmentIndex) else baseUrl
+        val fragment = if (fragmentIndex >= 0) baseUrl.substring(fragmentIndex) else ""
+        val separator =
+            when {
+                urlWithoutFragment.endsWith("?") || urlWithoutFragment.endsWith("&") -> ""
+                urlWithoutFragment.contains("?") -> "&"
+                else -> "?"
+            }
+        return urlWithoutFragment + separator + queryString + fragment
     }
 
     private fun applyAuth(
         auth: AuthConfig,
-        environment: Environment?,
+        context: ResolutionContext,
         builder: HttpRequestBuilder,
+        sensitiveHeaders: MutableSet<String>,
     ) {
         when (auth) {
             is AuthConfig.None -> {}
 
             is AuthConfig.Basic -> {
-                val username = variableResolver.resolve(auth.username, environment)
-                val password = variableResolver.resolve(auth.password, environment)
+                val username = context.resolve(auth.username)
+                val password = context.resolve(auth.password)
                 val credentials = Base64.getEncoder().encodeToString("$username:$password".toByteArray())
                 builder.headers.append(HttpHeaders.Authorization, "Basic $credentials")
             }
 
             is AuthConfig.Bearer -> {
-                val token = variableResolver.resolve(auth.token, environment)
+                val token = context.resolve(auth.token)
                 builder.headers.append(HttpHeaders.Authorization, "Bearer $token")
             }
 
             is AuthConfig.ApiKey -> {
-                val apiKey = variableResolver.resolve(auth.key, environment)
-                val apiValue = variableResolver.resolve(auth.value, environment)
+                val apiKey = context.resolve(auth.key)
+                val apiValue = context.resolve(auth.value)
                 when (auth.addTo) {
                     AuthConfig.ApiKey.AddTo.HEADER -> {
                         builder.headers.append(apiKey, apiValue)
+                        sensitiveHeaders += apiKey
                     }
 
                     AuthConfig.ApiKey.AddTo.QUERY_PARAM -> {
@@ -225,33 +271,38 @@ class RequestExecutor(
 
     private fun setRequestBody(
         body: RequestBody,
-        environment: Environment?,
+        context: ResolutionContext,
         builder: HttpRequestBuilder,
         binaryBody: ByteArray? = null,
+        applyDefaultContentType: Boolean = true,
     ) {
+        fun applyContentType(type: ContentType) {
+            if (applyDefaultContentType) builder.contentType(type)
+        }
+
         when (body) {
             is RequestBody.None -> {}
 
             is RequestBody.Json -> {
-                val content = variableResolver.resolve(body.content, environment)
-                builder.contentType(ContentType.Application.Json)
+                val content = context.resolve(body.content)
+                applyContentType(ContentType.Application.Json)
                 builder.setBody(content)
             }
 
             is RequestBody.Xml -> {
-                val content = variableResolver.resolve(body.content, environment)
-                builder.contentType(ContentType.Application.Xml)
+                val content = context.resolve(body.content)
+                applyContentType(ContentType.Application.Xml)
                 builder.setBody(content)
             }
 
             is RequestBody.FormUrlEncoded -> {
-                builder.contentType(ContentType.Application.FormUrlEncoded)
+                applyContentType(ContentType.Application.FormUrlEncoded)
                 val params =
                     body.fields
                         .filter { it.enabled && it.key.isNotBlank() }
                         .map { field ->
-                            val fieldKey = variableResolver.resolve(field.key, environment)
-                            val fieldValue = variableResolver.resolve(field.value, environment)
+                            val fieldKey = context.resolve(field.key)
+                            val fieldValue = context.resolve(field.value)
                             fieldKey to fieldValue
                         }
                 builder.setBody(
@@ -266,16 +317,16 @@ class RequestExecutor(
             }
 
             is RequestBody.Raw -> {
-                val content = variableResolver.resolve(body.content, environment)
-                val contentTypeStr = variableResolver.resolve(body.contentType, environment).ifBlank { "text/plain" }
+                val content = context.resolve(body.content)
+                val contentTypeStr = context.resolve(body.contentType).ifBlank { "text/plain" }
                 val parsedContentType =
                     runCatching { ContentType.parse(contentTypeStr) }.getOrElse { ContentType.Text.Plain }
-                builder.contentType(parsedContentType)
+                applyContentType(parsedContentType)
                 builder.setBody(content)
             }
 
             is RequestBody.Binary -> {
-                builder.contentType(ContentType.Application.OctetStream)
+                applyContentType(ContentType.Application.OctetStream)
                 builder.setBody(binaryBody ?: throw IllegalStateException("Binary body was not loaded"))
             }
 
@@ -284,8 +335,8 @@ class RequestExecutor(
                     MultiPartFormDataContent(
                         formData {
                             body.fields.filter { it.enabled && it.key.isNotBlank() }.forEach { field ->
-                                val fieldKey = variableResolver.resolve(field.key, environment)
-                                val fieldValue = variableResolver.resolve(field.value, environment)
+                                val fieldKey = context.resolve(field.key)
+                                val fieldValue = context.resolve(field.value)
                                 append(fieldKey, fieldValue)
                             }
                         },
@@ -294,10 +345,10 @@ class RequestExecutor(
             }
 
             is RequestBody.GraphQL -> {
-                val query = variableResolver.resolve(body.query, environment)
+                val query = context.resolve(body.query)
                 val variablesJson =
                     body.variables
-                        ?.let { variableResolver.resolve(it, environment).takeIf { resolved -> resolved.isNotBlank() } }
+                        ?.let { context.resolve(it).takeIf { resolved -> resolved.isNotBlank() } }
                         ?.let { resolved ->
                             runCatching { Json.parseToJsonElement(resolved) }
                                 .getOrElse {
@@ -305,7 +356,7 @@ class RequestExecutor(
                                     null
                                 }
                         }
-                builder.contentType(ContentType.Application.Json)
+                applyContentType(ContentType.Application.Json)
                 val graphqlBody: JsonObject =
                     buildJsonObject {
                         put("query", query)
@@ -318,9 +369,10 @@ class RequestExecutor(
 
     private suspend fun loadBinaryBody(
         body: RequestBody.Binary,
-        environment: Environment?,
+        context: ResolutionContext,
     ): ByteArray {
-        val filePath = variableResolver.resolve(body.filePath, environment)
+        val filePath = context.resolve(body.filePath).trim()
+        require(filePath.isNotBlank()) { "Select a file for the binary body" }
 
         // Security check: reject paths with null bytes (path injection attack)
         if (filePath.contains('\u0000')) {
@@ -333,19 +385,19 @@ class RequestExecutor(
 
         when {
             canonical == null -> {
-                throw IllegalArgumentException("Cannot resolve file path: $filePath")
+                throw IllegalArgumentException("Binary file path is invalid")
             }
 
             !file.exists() -> {
-                throw java.io.FileNotFoundException("Binary file does not exist: $filePath")
+                throw java.io.FileNotFoundException("Binary file does not exist")
             }
 
             !file.isFile -> {
-                throw IllegalArgumentException("Path is not a regular file: $filePath")
+                throw IllegalArgumentException("Binary path is not a regular file")
             }
 
             !canonical.startsWith(home) -> {
-                throw SecurityException("Binary file must be within user home directory")
+                throw SecurityException("Binary file must be within the user home directory")
             }
         }
 
@@ -359,10 +411,10 @@ class RequestExecutor(
     private fun validateHeader(
         key: String,
         value: String,
-        environment: Environment?,
+        context: ResolutionContext,
     ): String? {
-        val resolvedKey = variableResolver.resolve(key, environment)
-        val resolvedValue = variableResolver.resolve(value, environment)
+        val resolvedKey = context.resolve(key)
+        val resolvedValue = context.resolve(value)
 
         // Check for control characters in header name (potential header injection)
         if (resolvedKey.any { it.isISOControl() }) {

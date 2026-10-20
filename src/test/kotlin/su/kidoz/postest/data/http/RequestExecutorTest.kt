@@ -13,6 +13,7 @@ import su.kidoz.postest.domain.model.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import io.ktor.http.HttpMethod as KtorHttpMethod
 
@@ -277,7 +278,7 @@ class RequestExecutorTest {
             val result = executor.execute(request)
 
             assertTrue(result.isFailure)
-            assertTrue(result.exceptionOrNull()?.message?.contains("does not exist") == true)
+            assertEquals("Client certificate could not be loaded", result.exceptionOrNull()?.message)
         }
 
     @Test
@@ -506,5 +507,174 @@ class RequestExecutorTest {
             assertTrue(result.isSuccess)
             val response = result.getOrNull()!!
             assertEquals(responseBody.toByteArray().size.toLong(), response.size)
+        }
+
+    @Test
+    fun `API key header is removed when a redirect changes host`() =
+        runTest {
+            val requests = mutableListOf<HttpRequestData>()
+            val client =
+                HttpClient(MockEngine) {
+                    engine {
+                        addHandler { request ->
+                            requests += request
+                            if (request.url.host == "api.example.com") {
+                                respond(
+                                    content = "",
+                                    status = HttpStatusCode.Found,
+                                    headers = headersOf(HttpHeaders.Location, "https://evil.example.net/collect"),
+                                )
+                            } else {
+                                respond(content = "ok", status = HttpStatusCode.OK)
+                            }
+                        }
+                    }
+                    installSensitiveHeaderGuard()
+                }
+
+            val executor = RequestExecutor(client)
+            val result =
+                executor.execute(
+                    HttpRequest(
+                        url = "https://api.example.com/start",
+                        auth = AuthConfig.ApiKey("X-API-Key", "secret", AuthConfig.ApiKey.AddTo.HEADER),
+                    ),
+                )
+
+            assertTrue(result.isSuccess)
+            assertEquals(2, requests.size)
+            assertEquals("secret", requests.first().headers["X-API-Key"])
+            assertNull(requests.last().headers["X-API-Key"])
+        }
+
+    @Test
+    fun `responses are truncated at the byte limit`() =
+        runTest {
+            val oversized = ByteArray(10 * 1024 * 1024 + 10) { 'a'.code.toByte() }
+            val mockClient = createMockClient { respond(content = oversized) }
+
+            val result = RequestExecutor(mockClient).execute(HttpRequest(url = "https://api.example.com/large"))
+
+            assertTrue(result.isSuccess)
+            val response = result.getOrNull()!!
+            assertTrue(response.truncated)
+            assertEquals(10 * 1024 * 1024L, response.size)
+            assertEquals(10 * 1024 * 1024, response.body.length)
+        }
+
+    @Test
+    fun `explicit Content-Type header wins over the body default`() =
+        runTest {
+            var contentType: String? = null
+            val mockClient =
+                createMockClient { request ->
+                    // Ktor carries Content-Type on the outgoing content rather than in headers
+                    contentType = request.body.contentType?.toString()
+                    respond(content = "{}", status = HttpStatusCode.OK)
+                }
+
+            val request =
+                HttpRequest(
+                    method = HttpMethod.PATCH,
+                    url = "https://api.example.com/users/1",
+                    headers = listOf(KeyValue("Content-Type", "application/merge-patch+json")),
+                    body = RequestBody.Json("{}"),
+                )
+
+            val result = RequestExecutor(mockClient).execute(request)
+
+            assertTrue(result.isSuccess)
+            assertEquals("application/merge-patch+json", contentType)
+        }
+
+    @Test
+    fun `query parameters are inserted before the fragment`() =
+        runTest {
+            val mockClient =
+                createMockClient { request ->
+                    assertEquals("existing", request.url.parameters["existing"])
+                    assertEquals("new", request.url.parameters["added"])
+                    assertEquals("section", request.url.fragment)
+                    respond(content = "{}", status = HttpStatusCode.OK)
+                }
+
+            val request =
+                HttpRequest(
+                    url = "https://api.example.com/users?existing=existing#section",
+                    queryParams = listOf(KeyValue("added", "new")),
+                )
+
+            assertTrue(RequestExecutor(mockClient).execute(request).isSuccess)
+        }
+
+    @Test
+    fun `collection variables are resolved when no environment variable matches`() =
+        runTest {
+            val mockClient =
+                createMockClient { request ->
+                    assertEquals("collection.example.com", request.url.host)
+                    respond(content = "{}", status = HttpStatusCode.OK)
+                }
+
+            val result =
+                RequestExecutor(mockClient).execute(
+                    HttpRequest(url = "https://{{host}}/users"),
+                    collectionVariables = listOf(Variable(key = "host", value = "collection.example.com")),
+                )
+
+            assertTrue(result.isSuccess)
+        }
+
+    @Test
+    fun `environment variables win over collection variables`() =
+        runTest {
+            val mockClient =
+                createMockClient { request ->
+                    assertEquals("environment.example.com", request.url.host)
+                    respond(content = "{}", status = HttpStatusCode.OK)
+                }
+
+            val result =
+                RequestExecutor(mockClient).execute(
+                    HttpRequest(url = "https://{{host}}/users"),
+                    environment =
+                        Environment(
+                            name = "Test",
+                            variables = listOf(Variable(key = "host", value = "environment.example.com")),
+                        ),
+                    collectionVariables = listOf(Variable(key = "host", value = "collection.example.com")),
+                )
+
+            assertTrue(result.isSuccess)
+        }
+
+    @Test
+    fun `invalid URL errors do not include the resolved URL`() =
+        runTest {
+            val executor = RequestExecutor(createMockClient { respond(content = "") })
+            val result =
+                executor.execute(
+                    HttpRequest(url = "http://exa mple.test/{{secret}}"),
+                    environment =
+                        Environment(
+                            name = "Test",
+                            variables = listOf(Variable(key = "secret", value = "top-secret-value")),
+                        ),
+                )
+
+            assertTrue(result.isFailure)
+            assertEquals("Invalid URL", result.exceptionOrNull()?.message)
+        }
+
+    @Test
+    fun `binary body with no selected file fails safely`() =
+        runTest {
+            val result =
+                RequestExecutor(createMockClient { respond(content = "") }).execute(
+                    HttpRequest(url = "https://api.example.com/upload", body = RequestBody.Binary("")),
+                )
+
+            assertTrue(result.isFailure)
+            assertEquals("Select a file for the binary body", result.exceptionOrNull()?.message)
         }
 }

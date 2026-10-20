@@ -1,6 +1,7 @@
 package su.kidoz.postest.viewmodel.manager
 
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
@@ -35,6 +36,7 @@ class RequestExecutionManager(
     fun sendRequest(
         tabId: String,
         request: HttpRequest,
+        collectionVariables: List<su.kidoz.postest.domain.model.Variable> = emptyList(),
     ) {
         tabManager.setTabLoading(tabId, isLoading = true, error = null)
 
@@ -45,53 +47,86 @@ class RequestExecutionManager(
             scope.launch {
                 val currentJob = coroutineContext.job
                 val startTime = System.currentTimeMillis()
-                val result = executeRequestUseCase(request)
-                val endTime = System.currentTimeMillis()
-                val duration = endTime - startTime
+                try {
+                    val result = executeRequestUseCase(request, collectionVariables)
+                    val duration = System.currentTimeMillis() - startTime
 
-                // Skip writing results if this job was cancelled or superseded by a newer request
-                currentJob.ensureActive()
-                if (activeRequestJobs[tabId] != currentJob) return@launch
+                    // Skip writing results if this job was cancelled or superseded by a newer request
+                    currentJob.ensureActive()
+                    if (activeRequestJobs[tabId] != currentJob) return@launch
 
-                // Remove job from tracking when complete, but only if still the current job
-                activeRequestJobs.remove(tabId, currentJob)
-
-                result.fold(
-                    onSuccess = { response ->
-                        // Add to history
-                        val historyEntry =
-                            HistoryEntry(
-                                request = request,
-                                response = response,
-                                duration = duration,
+                    result.fold(
+                        onSuccess = { response ->
+                            // Publish the network result before any storage work so history
+                            // failures cannot hide a successful response.
+                            tabManager.setTabResponse(tabId, response = response, error = null)
+                            addHistory(
+                                HistoryEntry(
+                                    request = request,
+                                    response = response,
+                                    duration = duration,
+                                ),
                             )
-                        historyManager.addHistoryEntry(historyEntry)
+                        },
+                        onFailure = { error ->
+                            if (error is CancellationException) throw error
 
-                        tabManager.setTabResponse(tabId, response = response, error = null)
-                    },
-                    onFailure = { error ->
-                        logger.error(error) { "HTTP request failed: ${error.message}" }
+                            val errorMsg = publicErrorMessage(error)
+                            logger.error { "HTTP request failed: ${error::class.simpleName}" }
 
-                        val errorMsg = error.message ?: "Unknown error"
-
-                        // Add to history with error details preserved
-                        val historyEntry =
-                            HistoryEntry(
-                                request = request,
-                                response = null,
-                                errorMessage = errorMsg,
-                                duration = duration,
+                            tabManager.setTabResponse(tabId, response = null, error = errorMsg)
+                            sideEffectEmitter.emit(AppSideEffect.ShowError(errorMsg))
+                            addHistory(
+                                HistoryEntry(
+                                    request = request,
+                                    response = null,
+                                    errorMessage = errorMsg,
+                                    duration = duration,
+                                ),
                             )
-                        historyManager.addHistoryEntry(historyEntry)
-
-                        tabManager.setTabResponse(tabId, response = null, error = errorMsg)
-
-                        sideEffectEmitter.emit(AppSideEffect.ShowError(errorMsg))
-                    },
-                )
+                        },
+                    )
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Throwable) {
+                    if (activeRequestJobs[tabId] == currentJob) {
+                        logger.error { "Request execution failed: ${error::class.simpleName}" }
+                        tabManager.setTabResponse(tabId, response = null, error = "Request failed")
+                        sideEffectEmitter.emit(AppSideEffect.ShowError("Request failed"))
+                    }
+                } finally {
+                    // Keep ownership until all work is finished so an older job can never
+                    // remove or overwrite a newer one.
+                    if (activeRequestJobs[tabId] == currentJob) {
+                        activeRequestJobs.remove(tabId, currentJob)
+                    }
+                }
             }
         }
     }
+
+    private suspend fun addHistory(entry: HistoryEntry) {
+        try {
+            historyManager.addHistoryEntry(entry)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            sideEffectEmitter.emit(AppSideEffect.ShowToast("Request history could not be saved"))
+        }
+    }
+
+    private fun publicErrorMessage(error: Throwable): String =
+        when (error) {
+            is SecurityException -> error.message ?: "Request blocked"
+            is IllegalArgumentException -> error.message?.takeIf { it.isNotBlank() } ?: "Invalid request"
+            is java.net.UnknownHostException -> "Host not found"
+            is java.net.ConnectException -> "Connection failed"
+            is java.net.SocketTimeoutException -> "Request timed out"
+            is io.ktor.client.plugins.HttpRequestTimeoutException -> "Request timed out"
+            is javax.net.ssl.SSLException -> "TLS error"
+            is java.io.IOException -> "Network error"
+            else -> "Network error"
+        }
 
     /**
      * Cancels the active request for the specified tab.

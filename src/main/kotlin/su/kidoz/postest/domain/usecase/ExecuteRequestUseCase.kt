@@ -4,13 +4,17 @@ import su.kidoz.postest.data.http.RequestExecutor
 import su.kidoz.postest.data.repository.EnvironmentRepository
 import su.kidoz.postest.domain.model.HttpRequest
 import su.kidoz.postest.domain.model.HttpResponse
+import su.kidoz.postest.domain.model.Variable
 
 class ExecuteRequestUseCase(
     private val requestExecutor: RequestExecutor,
     private val environmentRepository: EnvironmentRepository,
 ) {
-    suspend operator fun invoke(request: HttpRequest): Result<HttpResponse> {
+    suspend operator fun invoke(
+        request: HttpRequest,
+        collectionVariables: List<Variable> = emptyList(),
+    ): Result<HttpResponse> {
         val activeEnvironment = environmentRepository.getActiveEnvironment()
-        return requestExecutor.execute(request, activeEnvironment)
+        return requestExecutor.execute(request, activeEnvironment, collectionVariables)
     }
 }
