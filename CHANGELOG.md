@@ -2,6 +2,49 @@
 
 All notable changes to Postest are documented in this file. Releases are listed newest first.
 
+## [Unreleased]
+
+**Encrypted local storage, safer imports, and request handling fixes.**
+
+### Highlights
+
+- **Encrypted Storage** - User content is encrypted at rest with AES-256-GCM; the key lives in the OS credential store, and startup requires unlocking it.
+- **Safer Upgrades** - Existing databases move through a verified staging file, with encrypted `.bak` snapshots retained for rollback.
+- **Import and Export Fidelity** - URL-embedded query parameters now survive a Postman round trip.
+
+### Added
+
+- AES-256-GCM encryption for stored collections, requests, environments, history, and workspace snapshots.
+- OS credential-store integration: macOS Keychain, Windows Credential Manager, and Linux Secret Service via libsecret.
+- Recovery key setup and display through **Storage → Show Recovery Key**.
+- Startup unlock, retry, and recovery flow; autosave stays blocked while storage is inaccessible.
+- Exclusive storage lock that prevents two instances from writing the same database.
+- Verified migration of the existing plaintext database into encrypted storage, with `.bak` snapshots.
+- Automatic adoption of earlier `postest-protected.db` installations.
+
+### Changed
+
+- Editing an environment no longer changes which environment is active.
+- Postman export includes query parameters embedded in the request URL; import decodes them once and ignores URL fragments.
+
+### Fixed
+
+- Oversized streaming responses complete as soon as the 10 MB limit is reached instead of waiting for the stream to close.
+- Import failures no longer expose file content or parser causes in error messages or logs.
+
+### Security
+
+- User-content columns are encrypted before they reach SQLite; structural IDs, timestamps, and flags remain readable.
+- Recovery keys are never written to files or logs.
+- Execution errors use fixed messages without URLs, hostnames, file paths, or exception details.
+
+### Known Limitations
+
+- OAuth 2.0 authentication is not yet supported.
+- WebSocket connections are not yet supported.
+- Certificate pinning is not yet supported.
+- Automatic key rotation is not implemented.
+
 ## [1.1.0] - 2026-10-20
 
 **Workspace recovery, drag-and-drop collections, and desktop UI refinements.**
@@ -165,5 +208,6 @@ All notable changes to Postest are documented in this file. Releases are listed 
 - WebSocket connections not yet supported
 - Certificate pinning not yet supported
 
+[Unreleased]: https://github.com/kidoz/postest/compare/v1.1.0...HEAD
 [1.1.0]: https://github.com/kidoz/postest/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/kidoz/postest/commits/v1.0.0
