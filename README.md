@@ -12,6 +12,12 @@ A modern, lightweight REST API client built with Kotlin and Compose Multiplatfor
 [![Build](https://img.shields.io/github/actions/workflow/status/kidoz/postest/build.yml?label=CI)](https://github.com/kidoz/postest/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
+## Documentation
+
+- [Documentation index](docs/README.md) — tutorials, how-to guides, reference, and explanations
+- [Changelog](CHANGELOG.md)
+- [Roadmap](ROADMAP.md)
+
 ## Features
 
 - **HTTP Methods** - Support for GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS
