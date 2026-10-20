@@ -12,7 +12,7 @@ All application data is stored in:
 
 This includes:
 
-- collections and requests, including Basic/Bearer/API-key credentials
+- collections and requests, including Basic/Bearer/API-key credentials and OAuth 2.0 tokens
 - client-certificate paths and passphrases
 - environment variables, including values marked secret
 - request history with request and response bodies
@@ -69,6 +69,7 @@ Before release, verify actual credential-store read/write and restart behavior o
 ## Data in transit
 
 - Requests go directly to the target server.
+- OAuth 2.0 token requests go directly to the configured token endpoint. Authorization Code opens the system browser and receives the code on a temporary loopback listener at `127.0.0.1`.
 - HTTPS uses the platform's default certificate validation.
 - Client certificates (PEM or PKCS#12) are supported for mTLS on HTTP requests.
 - WebSocket connections use the same direct connection and platform TLS validation for `wss://`; client certificates are not applied to them.
@@ -82,6 +83,7 @@ Before release, verify actual credential-store read/write and restart behavior o
 - Optional HTTP header logging is off by default. When enabled, `Authorization`, `Proxy-Authorization`, `Cookie`, and headers containing `token`, `secret`, `api-key`, or `auth` are sanitized. See [Configuration](../reference/configuration.md).
 - Execution errors use fixed messages. They omit resolved URLs, hostnames, file paths, and exception text; logs record only the exception type and the request host.
 - Import errors and logs omit file content and parser exception chains, so a malformed collection or specification is not echoed into logs or error toasts.
+- OAuth 2.0 authorization codes, access and refresh tokens, and client secrets are never logged.
 
 ## Network access
 

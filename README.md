@@ -24,7 +24,7 @@ A modern, lightweight REST API client built with Kotlin and Compose Multiplatfor
 - **WebSockets** - Connect to `ws://` and `wss://` endpoints, send and receive messages, and inspect the live transcript
 - **Request Builder** - Headers, query parameters, and body editor
 - **Body Types** - JSON, GraphQL, form data, multipart, raw text, binary
-- **Authentication** - Basic Auth, Bearer Token, API Key, Client Certificate (mTLS)
+- **Authentication** - Basic Auth, Bearer Token, API Key, OAuth 2.0 (Authorization Code with PKCE, Client Credentials), Client Certificate (mTLS)
 - **Collections** - Organize requests into collections and nested folders, with drag-and-drop moves between folders
 - **Environments** - Manage variables across different environments
 - **Variable Substitution** - Use `{{variable}}` syntax in URLs, headers, and body

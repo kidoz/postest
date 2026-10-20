@@ -36,6 +36,8 @@ The form-data editor lets you mark a field as a file and choose a path, but the 
 - Basic (username/password)
 - Bearer token
 - API key (header or query parameter)
+- OAuth 2.0 Authorization Code with PKCE (system browser + loopback redirect)
+- OAuth 2.0 Client Credentials
 - Client certificate (mTLS), in addition to the schemes above:
   - PEM certificate plus private key
   - PKCS#12 (`.p12`, `.pfx`) with optional passphrase

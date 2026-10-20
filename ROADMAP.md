@@ -9,7 +9,9 @@ This document outlines planned features and improvements for Postest.
 - [x] Authentication: None, Basic, Bearer Token, API Key
 - [x] Response viewing with syntax highlighting (JSON, XML, HTML)
 - [x] Collection management with folders
-- [x] Environment variables with secret masking in the UI (values stored unencrypted)
+- [x] Environment variables with secret masking in the UI (encrypted at rest in encrypted storage mode)
+- [x] OAuth 2.0 Authorization Code with PKCE and Client Credentials
+- [x] WebSocket connection testing (text messages)
 - [x] Request history tracking
 - [x] Import: Postman Collection (v1, v2, v2.1), OpenAPI 3.x
 - [x] Export: Postman Collection v2.1
@@ -59,7 +61,7 @@ Advanced HTTP and configuration:
   - Support branch/tag selection and path filtering
   - Auto-detect Postman/OpenAPI formats in repository
   - Enable version-controlled collection sharing without cloud sync
-- [ ] OAuth 2.0 Auth - Support OAuth 2.0 flows (Authorization Code, Client Credentials, etc.)
+- [x] OAuth 2.0 Auth - Authorization Code with PKCE and Client Credentials
 - [ ] Proxy Settings - Configure HTTP/HTTPS proxy
 - [ ] SSL Settings - Toggle SSL verification, custom CA certificates
 - [ ] Request Timeout - Configure request timeout per request or globally
@@ -81,7 +83,7 @@ Quality of life improvements:
 - [ ] Response Schema Validation - Validate response against JSON Schema
 - [ ] Request Templates - Create reusable request templates
 - [ ] Favorites/Pinned Requests - Pin frequently used requests
-- [ ] WebSocket Support - Basic WebSocket connection testing
+- [x] WebSocket Support - Basic WebSocket connection testing
 - [ ] Request Comparison - Compare two responses side-by-side
 - [ ] Bulk Edit - Bulk edit headers, params across requests
 

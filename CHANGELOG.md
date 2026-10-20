@@ -11,6 +11,7 @@ All notable changes to Postest are documented in this file. Releases are listed 
 - **Encrypted Storage** - User content is encrypted at rest with AES-256-GCM; the key lives in the OS credential store, and startup requires unlocking it.
 - **Safer Upgrades** - Existing databases move through a verified staging file, with encrypted `.bak` snapshots retained for rollback.
 - **WebSockets** - Open `ws://` and `wss://` connections, send and receive text messages, and inspect the live transcript.
+- **OAuth 2.0** - Authorize through the system browser with Authorization Code + PKCE, or fetch tokens with Client Credentials, and reuse stored tokens with in-memory refresh.
 - **Import and Export Fidelity** - URL-embedded query parameters now survive a Postman round trip.
 
 ### Added
@@ -25,6 +26,10 @@ All notable changes to Postest are documented in this file. Releases are listed 
 - WebSocket request tabs with connect/disconnect, text message composer, and a timestamped live transcript.
 - WebSocket URL conversion from `http(s)://`, variable substitution, query parameters, headers, and Basic/Bearer/API-key authentication.
 - Automatic connection cleanup when disconnecting, closing a tab, switching back to HTTP, or closing the application.
+- OAuth 2.0 Authorization Code with PKCE, using the system browser and a temporary loopback redirect.
+- OAuth 2.0 Client Credentials and in-memory refresh-token handling.
+- OAuth 2.0 tokens stored with the request, with fixed error messages that omit endpoints and token values.
+- Postman OAuth 2.0 auth import and export.
 
 ### Changed
 
@@ -44,7 +49,7 @@ All notable changes to Postest are documented in this file. Releases are listed 
 
 ### Known Limitations
 
-- OAuth 2.0 authentication is not yet supported.
+- OAuth 2.0 Password and Implicit grants are not supported. Refresh tokens are cached in memory; providers that rotate refresh tokens may require reauthorization after a restart.
 - WebSocket binary sending, automatic reconnection, and transcript persistence are not supported.
 - Client certificates are not applied to WebSocket connections.
 - Certificate pinning is not yet supported.

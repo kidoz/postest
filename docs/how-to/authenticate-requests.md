@@ -25,6 +25,23 @@ Postest sends `Authorization: Bearer <token>`.
    - **Query parameter** - adds the key to the URL query string
 3. Enter the key name and value.
 
+## OAuth 2.0
+
+OAuth 2.0 supports **Authorization Code with PKCE** and **Client Credentials**:
+
+1. Select **OAuth 2.0**.
+2. Choose the grant type.
+3. Enter the provider's **Authorization URL** (Authorization Code only) and **Token URL**. HTTPS is required, except for loopback test endpoints.
+4. Enter the **Client ID** and, if the provider issued one, the **Client Secret**. Enable **Send client secret in request body** when the provider expects `client_secret_post` instead of Basic authentication.
+5. Enter the **Scope** if required.
+6. Choose **Authorize** (Authorization Code) or **Get Token** (Client Credentials).
+
+Authorization Code opens your default browser and returns through a temporary `http://127.0.0.1:<port>/callback` listener. Register loopback redirects with your provider; the port is chosen at runtime. The flow uses PKCE (S256), verifies the `state` value, and times out after five minutes.
+
+The acquired access token is stored with the request. **Clear Token** removes the stored token. When a stored token expires but a refresh token is available, Postest refreshes it in memory for subsequent requests; if the provider rotates refresh tokens, authorize again after restarting.
+
+Grant types not listed here, such as Password or Implicit, are not supported.
+
 ## Client certificate (mTLS)
 
 The client-certificate section is separate from the authentication type. It can be combined with Basic, Bearer, or API-key auth.
@@ -50,6 +67,6 @@ All authentication fields support `{{variable}}` substitution from the active en
 
 ## Security
 
-Credentials and certificate passphrases are stored in the request data in the local database. They are not sent anywhere except to the target server. Optional HTTP header logging sanitizes `Authorization`, `Cookie`, and headers containing `token` or `secret`.
+Credentials, OAuth tokens, and certificate passphrases are stored in the request data in the local database. Encrypted storage protects them at rest; unencrypted storage leaves them readable. They are not sent anywhere except to the target server and, for OAuth, the configured token endpoint. Optional HTTP header logging sanitizes `Authorization`, `Cookie`, and headers containing `token` or `secret`. Authorization codes, tokens, and client secrets are never logged.
 
 See [Security model](../explanation/security-model.md) and [Variables](../reference/variables.md).
