@@ -7,7 +7,9 @@ import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -15,6 +17,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import su.kidoz.postest.domain.model.CollectionItem
 import su.kidoz.postest.domain.model.Environment
+import su.kidoz.postest.domain.model.EnvironmentSnapshot
 import su.kidoz.postest.domain.model.HistoryEntry
 import su.kidoz.postest.domain.model.HttpMethod
 import su.kidoz.postest.domain.model.HttpRequest
@@ -66,6 +69,13 @@ class MainViewModelTest {
             }
         manageEnvironmentsUseCase =
             mockk {
+                every { snapshot } returns
+                    combine(environmentsFlow, activeEnvironmentIdFlow) { environments, selected ->
+                        EnvironmentSnapshot(environments.map { it.copy(isActive = it.id == selected) })
+                    }
+                coEvery { getActiveEnvironment() } answers {
+                    environmentsFlow.value.find { it.id == activeEnvironmentIdFlow.value }
+                }
                 every { environments } returns environmentsFlow
                 every { activeEnvironmentId } returns activeEnvironmentIdFlow
                 coEvery { loadEnvironments() } returns emptyList()
@@ -122,6 +132,7 @@ class MainViewModelTest {
 
             val initialTabCount = viewModel.state.value.tabs.size
             viewModel.newTab()
+            testDispatcher.scheduler.runCurrent()
 
             val state = viewModel.state.value
             assertEquals(initialTabCount + 1, state.tabs.size)
@@ -135,12 +146,14 @@ class MainViewModelTest {
             testDispatcher.scheduler.advanceUntilIdle()
 
             viewModel.newTab()
+            testDispatcher.scheduler.runCurrent()
             val tabToClose =
                 viewModel.state.value.tabs
                     .first()
                     .id
 
             viewModel.closeTab(tabToClose)
+            testDispatcher.scheduler.runCurrent()
 
             val state = viewModel.state.value
             assertEquals(1, state.tabs.size)
@@ -157,6 +170,7 @@ class MainViewModelTest {
                 viewModel.state.value.tabs
                     .first()
             viewModel.closeTab(onlyTab.id)
+            testDispatcher.scheduler.runCurrent()
 
             val state = viewModel.state.value
             assertEquals(1, state.tabs.size)
@@ -170,12 +184,14 @@ class MainViewModelTest {
             testDispatcher.scheduler.advanceUntilIdle()
 
             viewModel.newTab()
+            testDispatcher.scheduler.runCurrent()
             val firstTabId =
                 viewModel.state.value.tabs
                     .first()
                     .id
 
             viewModel.selectTab(firstTabId)
+            testDispatcher.scheduler.runCurrent()
 
             assertEquals(firstTabId, viewModel.state.value.activeTabId)
         }
@@ -192,6 +208,7 @@ class MainViewModelTest {
                     url = "https://api.example.com/users",
                 )
             viewModel.updateRequest(newRequest)
+            testDispatcher.scheduler.runCurrent()
 
             val activeTab = viewModel.state.value.activeTab
             assertNotNull(activeTab)
@@ -206,14 +223,16 @@ class MainViewModelTest {
             val viewModel = createViewModel()
             testDispatcher.scheduler.advanceUntilIdle()
 
-            coEvery { executeRequestUseCase.invoke(any()) } coAnswers {
+            coEvery { executeRequestUseCase.execute(any(), any()) } coAnswers {
                 // Delay to observe loading state
                 kotlinx.coroutines.delay(100)
                 Result.success(createSuccessResponse())
             }
 
             viewModel.updateRequest(HttpRequest(url = "https://api.example.com"))
+            testDispatcher.scheduler.runCurrent()
             viewModel.sendRequest()
+            testDispatcher.scheduler.runCurrent()
 
             val loadingState = viewModel.state.value.activeTab
             assertTrue(loadingState?.isLoading == true)
@@ -226,10 +245,12 @@ class MainViewModelTest {
             testDispatcher.scheduler.advanceUntilIdle()
 
             val response = createSuccessResponse()
-            coEvery { executeRequestUseCase.invoke(any()) } returns Result.success(response)
+            coEvery { executeRequestUseCase.execute(any(), any()) } returns Result.success(response)
 
             viewModel.updateRequest(HttpRequest(url = "https://api.example.com"))
+            testDispatcher.scheduler.runCurrent()
             viewModel.sendRequest()
+            testDispatcher.scheduler.runCurrent()
             testDispatcher.scheduler.advanceUntilIdle()
 
             val activeTab = viewModel.state.value.activeTab
@@ -245,10 +266,12 @@ class MainViewModelTest {
             val viewModel = createViewModel()
             testDispatcher.scheduler.advanceUntilIdle()
 
-            coEvery { executeRequestUseCase.invoke(any()) } returns Result.failure(RuntimeException("Network error"))
+            coEvery { executeRequestUseCase.execute(any(), any()) } returns Result.failure(RuntimeException("Network error"))
 
             viewModel.updateRequest(HttpRequest(url = "https://api.example.com"))
+            testDispatcher.scheduler.runCurrent()
             viewModel.sendRequest()
+            testDispatcher.scheduler.runCurrent()
             testDispatcher.scheduler.advanceUntilIdle()
 
             val activeTab = viewModel.state.value.activeTab
@@ -264,10 +287,12 @@ class MainViewModelTest {
             val viewModel = createViewModel()
             testDispatcher.scheduler.advanceUntilIdle()
 
-            coEvery { executeRequestUseCase.invoke(any()) } returns Result.success(createSuccessResponse())
+            coEvery { executeRequestUseCase.execute(any(), any()) } returns Result.success(createSuccessResponse())
 
             viewModel.updateRequest(HttpRequest(url = "https://api.example.com"))
+            testDispatcher.scheduler.runCurrent()
             viewModel.sendRequest()
+            testDispatcher.scheduler.runCurrent()
             testDispatcher.scheduler.advanceUntilIdle()
 
             coVerify { manageHistoryUseCase.addHistoryEntry(any()) }
@@ -279,31 +304,35 @@ class MainViewModelTest {
             val viewModel = createViewModel()
             testDispatcher.scheduler.advanceUntilIdle()
 
-            coEvery { executeRequestUseCase.invoke(any()) } returns Result.failure(RuntimeException("Error"))
+            coEvery { executeRequestUseCase.execute(any(), any()) } returns Result.failure(RuntimeException("Error"))
 
             viewModel.updateRequest(HttpRequest(url = "https://api.example.com"))
+            testDispatcher.scheduler.runCurrent()
             viewModel.sendRequest()
+            testDispatcher.scheduler.runCurrent()
             testDispatcher.scheduler.advanceUntilIdle()
 
             coVerify { manageHistoryUseCase.addHistoryEntry(any()) }
         }
 
     @Test
-    fun `sendRequest should not add to history or set error when request is cancelled`() =
+    fun `sendRequest cancellation clears loading without writing history`() =
         runTest {
             val viewModel = createViewModel()
             testDispatcher.scheduler.advanceUntilIdle()
 
-            coEvery { executeRequestUseCase.invoke(any()) } throws CancellationException("Request cancelled")
+            coEvery { executeRequestUseCase.execute(any(), any()) } throws CancellationException("Request cancelled")
 
             viewModel.updateRequest(HttpRequest(url = "https://api.example.com"))
+            testDispatcher.scheduler.runCurrent()
             viewModel.sendRequest()
+            testDispatcher.scheduler.runCurrent()
             testDispatcher.scheduler.advanceUntilIdle()
 
             coVerify(exactly = 0) { manageHistoryUseCase.addHistoryEntry(any()) }
             val activeTab = viewModel.state.value.activeTab
             assertNotNull(activeTab)
-            assertNull(activeTab.error)
+            assertEquals("Request cancelled", activeTab.error)
             assertNull(activeTab.response)
         }
 
@@ -319,6 +348,7 @@ class MainViewModelTest {
                     url = "https://api.example.com/users",
                 )
             viewModel.openRequest(request)
+            testDispatcher.scheduler.runCurrent()
 
             val state = viewModel.state.value
             assertEquals(2, state.tabs.size)
@@ -335,6 +365,7 @@ class MainViewModelTest {
                 HttpRequest(url = "https://api.example.com/users"),
                 collectionItemId = "item-1",
             )
+            testDispatcher.scheduler.runCurrent()
 
             assertEquals(
                 "item-1",
@@ -356,6 +387,7 @@ class MainViewModelTest {
                     duration = 100,
                 )
             viewModel.openHistoryEntry(entry)
+            testDispatcher.scheduler.runCurrent()
 
             val state = viewModel.state.value
             val activeTab = state.activeTab
@@ -372,6 +404,7 @@ class MainViewModelTest {
 
             val initialTheme = viewModel.state.value.isDarkTheme
             viewModel.toggleTheme()
+            testDispatcher.scheduler.runCurrent()
 
             assertEquals(!initialTheme, viewModel.state.value.isDarkTheme)
         }
@@ -383,6 +416,7 @@ class MainViewModelTest {
             testDispatcher.scheduler.advanceUntilIdle()
 
             viewModel.showEnvironmentDialog()
+            testDispatcher.scheduler.runCurrent()
 
             assertTrue(viewModel.state.value.showEnvironmentDialog)
         }
@@ -394,7 +428,9 @@ class MainViewModelTest {
             testDispatcher.scheduler.advanceUntilIdle()
 
             viewModel.showEnvironmentDialog()
+            testDispatcher.scheduler.runCurrent()
             viewModel.hideEnvironmentDialog()
+            testDispatcher.scheduler.runCurrent()
 
             assertFalse(viewModel.state.value.showEnvironmentDialog)
         }
@@ -412,7 +448,9 @@ class MainViewModelTest {
                 )
 
             viewModel.showNewCollectionDialog()
+            testDispatcher.scheduler.runCurrent()
             viewModel.createCollection("Test Collection")
+            testDispatcher.scheduler.runCurrent()
             testDispatcher.scheduler.advanceUntilIdle()
 
             coVerify { manageCollectionsUseCase.createCollection("Test Collection") }
@@ -431,7 +469,9 @@ class MainViewModelTest {
             coEvery { manageCollectionsUseCase.moveCollectionItem(any(), any()) } returns true
 
             viewModel.addFolderToCollection("collection-1", "Folder", "folder-1")
+            testDispatcher.scheduler.runCurrent()
             viewModel.moveCollectionItem("item-1", "folder-2")
+            testDispatcher.scheduler.runCurrent()
             testDispatcher.scheduler.advanceUntilIdle()
 
             coVerify {
@@ -449,6 +489,7 @@ class MainViewModelTest {
             coEvery { manageEnvironmentsUseCase.setActiveEnvironment(any()) } returns Unit
 
             viewModel.selectEnvironment("env-1")
+            testDispatcher.scheduler.runCurrent()
             testDispatcher.scheduler.advanceUntilIdle()
 
             coVerify { manageEnvironmentsUseCase.setActiveEnvironment("env-1") }
@@ -463,6 +504,7 @@ class MainViewModelTest {
             coEvery { manageHistoryUseCase.clearHistory() } returns Unit
 
             viewModel.clearHistory()
+            testDispatcher.scheduler.runCurrent()
             testDispatcher.scheduler.advanceUntilIdle()
 
             coVerify { manageHistoryUseCase.clearHistory() }
@@ -505,7 +547,106 @@ class MainViewModelTest {
             activeEnvironmentIdFlow.value = "env-1"
             testDispatcher.scheduler.advanceUntilIdle()
 
-            assertEquals(env, viewModel.state.value.activeEnvironment)
+            assertEquals(env.copy(isActive = true), viewModel.state.value.activeEnvironment)
+        }
+
+    @Test
+    fun `startup restores saved work while preserving edits accepted before startup was scheduled`() =
+        runTest {
+            val loaded = kotlinx.coroutines.CompletableDeferred<su.kidoz.postest.domain.model.DraftSession?>()
+            coEvery { manageSessionUseCase.load() } coAnswers { loaded.await() }
+            val viewModel = createViewModel()
+            viewModel.updateRequest(HttpRequest(url = "/typed-before-startup"))
+            testDispatcher.scheduler.runCurrent()
+            assertFalse(viewModel.state.value.isInitialized)
+            loaded.complete(
+                su.kidoz.postest.domain.model.DraftSession(
+                    tabs =
+                        listOf(
+                            su.kidoz.postest.domain.model
+                                .DraftTab("saved", HttpRequest(url = "/saved"), true),
+                        ),
+                    activeTabId = "saved",
+                ),
+            )
+            testDispatcher.scheduler.advanceUntilIdle()
+            assertTrue(viewModel.state.value.isInitialized)
+            assertEquals(
+                listOf("/saved", "/typed-before-startup"),
+                viewModel.state.value.tabs
+                    .map { it.request.url },
+            )
+            assertEquals(
+                "/typed-before-startup",
+                viewModel.state.value.activeTab
+                    ?.request
+                    ?.url,
+            )
+            viewModel.cleanup()
+        }
+
+    @Test
+    fun `close waits for startup and persists restored work`() =
+        runTest {
+            val loaded = kotlinx.coroutines.CompletableDeferred<su.kidoz.postest.domain.model.DraftSession?>()
+            coEvery { manageSessionUseCase.load() } coAnswers { loaded.await() }
+            val viewModel = createViewModel()
+            val closing = kotlinx.coroutines.CoroutineScope(testDispatcher).async { viewModel.prepareToClose() }
+            testDispatcher.scheduler.runCurrent()
+            assertFalse(closing.isCompleted)
+            loaded.complete(
+                su.kidoz.postest.domain.model.DraftSession(
+                    tabs =
+                        listOf(
+                            su.kidoz.postest.domain.model
+                                .DraftTab("saved", HttpRequest(), true),
+                        ),
+                    activeTabId = "saved",
+                ),
+            )
+            testDispatcher.scheduler.advanceUntilIdle()
+            assertTrue(closing.await())
+            coVerify { manageSessionUseCase.save(match { it.tabs.single().id == "saved" }) }
+            viewModel.cleanup()
+        }
+
+    @Test
+    fun `sending after selection waits for its commit and uses the captured environment`() =
+        runTest {
+            val viewModel = createViewModel()
+            testDispatcher.scheduler.advanceUntilIdle()
+            val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+            val env = Environment(id = "selected", name = "Selected", isActive = true)
+            coEvery { manageEnvironmentsUseCase.setActiveEnvironment(env.id) } coAnswers {
+                gate.await()
+                activeEnvironmentIdFlow.value = env.id
+            }
+            environmentsFlow.value = listOf(env)
+            coEvery { executeRequestUseCase.execute(any(), any()) } returns Result.success(createSuccessResponse())
+            viewModel.selectEnvironment(env.id)
+            viewModel.sendRequest()
+            testDispatcher.scheduler.runCurrent()
+            coVerify(exactly = 0) { executeRequestUseCase.execute(any(), any()) }
+            gate.complete(Unit)
+            testDispatcher.scheduler.advanceUntilIdle()
+            coVerify(exactly = 1) { executeRequestUseCase.execute(any(), match { it.environment == env }) }
+            viewModel.cleanup()
+        }
+
+    @Test
+    fun `failed observation is modeled explicitly and does not kill workspace editing`() =
+        runTest {
+            every { manageCollectionsUseCase.collections } returns kotlinx.coroutines.flow.flow { error("sensitive data") }
+            val viewModel = createViewModel()
+            testDispatcher.scheduler.advanceUntilIdle()
+            assertEquals("Collections could not be loaded", viewModel.state.value.initializationError)
+            viewModel.newTab()
+            testDispatcher.scheduler.runCurrent()
+            assertEquals(2, viewModel.state.value.tabs.size)
+            viewModel.sendRequest()
+            testDispatcher.scheduler.runCurrent()
+            coVerify(exactly = 0) { executeRequestUseCase.execute(any(), any()) }
+            viewModel.cleanup()
         }
 
     private fun createSuccessResponse() =

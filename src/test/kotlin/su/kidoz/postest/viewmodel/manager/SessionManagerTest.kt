@@ -5,27 +5,15 @@ import io.mockk.coVerify
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import su.kidoz.postest.domain.model.DraftSession
-import su.kidoz.postest.domain.model.DraftTab
-import su.kidoz.postest.domain.model.HttpRequest
-import su.kidoz.postest.domain.model.HttpResponse
-import su.kidoz.postest.domain.model.MAX_PERSISTED_RESPONSE_BYTES
-import su.kidoz.postest.domain.model.RequestBody
-import su.kidoz.postest.domain.model.ResponseTime
+import su.kidoz.postest.domain.model.*
 import su.kidoz.postest.domain.usecase.ManageSessionUseCase
-import su.kidoz.postest.viewmodel.AppSideEffect
-import su.kidoz.postest.viewmodel.AppState
-import su.kidoz.postest.viewmodel.SideEffectEmitter
-import su.kidoz.postest.viewmodel.StateUpdater
-import su.kidoz.postest.viewmodel.TabState
+import su.kidoz.postest.viewmodel.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -40,82 +28,17 @@ class SessionManagerTest {
             coEvery { save(any()) } returns Unit
         }
     private val effects = mockk<SideEffectEmitter>(relaxed = true)
-    private val initial = TabState(id = "initial")
-    private val state = MutableStateFlow(AppState(tabs = listOf(initial), activeTabId = initial.id))
-
-    private fun manager(scope: CoroutineScope) =
-        SessionManager(
-            useCase,
-            state,
-            StateUpdater { state.value = it(state.value) },
-            effects,
-            scope,
-        )
+    private val tab = TabState(id = "initial")
+    private val state = MutableStateFlow(WorkspaceState(tabs = listOf(tab), activeTabId = tab.id, isRestored = true))
 
     private fun edit(url: String) {
-        state.value = state.value.copy(tabs = listOf(initial.copy(request = initial.request.copy(url = url), isDirty = true)))
+        state.value = state.value.copy(tabs = listOf(tab.copy(request = tab.request.copy(url = url), isDirty = true)))
     }
 
-    private fun response() =
-        HttpResponse(
-            statusCode = 200,
-            statusText = "OK",
-            headers = mapOf("Content-Type" to listOf("application/json")),
-            body = "{\"ok\":true}",
-            contentType = "application/json",
-            size = 11,
-            time = ResponseTime(total = 42),
-        )
-
-    @Test
-    fun `restores tab order selection dirty state and inactive body drafts`() =
+    @Test fun `autosave debounces rapid edits and stores only the latest request`() =
         runTest {
-            val json = RequestBody.Json("{\"draft\":true}")
-            val raw = RequestBody.Raw("raw draft", "text/custom")
-            val tabs =
-                listOf(
-                    DraftTab("first", HttpRequest(name = "First", body = raw), true, listOf(json, raw)),
-                    DraftTab("second", HttpRequest(name = "Second"), false),
-                )
-            coEvery { useCase.load() } returns DraftSession(tabs = tabs, activeTabId = "second")
-            manager(backgroundScope).initialize()
-            runCurrent()
-            assertEquals(listOf("first", "second"), state.value.tabs.map { it.id })
-            assertEquals("second", state.value.activeTabId)
-            assertTrue(
-                state.value.tabs
-                    .first()
-                    .isDirty,
-            )
-            assertEquals(
-                json,
-                state.value.tabs
-                    .first()
-                    .bodyDrafts[RequestBody.Json::class],
-            )
-            assertFalse(
-                state.value.tabs
-                    .first()
-                    .isLoading,
-            )
-            assertNull(
-                state.value.tabs
-                    .first()
-                    .response,
-            )
-            assertNull(
-                state.value.tabs
-                    .first()
-                    .error,
-            )
-            coVerify(exactly = 0) { useCase.save(any()) }
-        }
-
-    @Test
-    fun `autosave debounces rapid edits and stores only the latest request`() =
-        runTest {
-            manager(backgroundScope).initialize()
-            runCurrent()
+            val manager = SessionManager(useCase, state, effects, backgroundScope)
+            manager.initialize()
             edit("/first")
             runCurrent()
             advanceTimeBy(100)
@@ -135,12 +58,10 @@ class SessionManagerTest {
             coVerify(exactly = 1) { useCase.save(any()) }
         }
 
-    @Test
-    fun `closing flushes an edit still inside the debounce interval`() =
+    @Test fun `closing flushes a last keystroke without waiting for debounce`() =
         runTest {
-            val manager = manager(backgroundScope)
+            val manager = SessionManager(useCase, state, effects, backgroundScope)
             manager.initialize()
-            runCurrent()
             edit("/last-keystroke")
             assertTrue(manager.prepareToClose())
             advanceTimeBy(1000)
@@ -154,256 +75,133 @@ class SessionManagerTest {
                     },
                 )
             }
-            coVerify(exactly = 1) { useCase.save(any()) }
         }
 
-    @Test
-    fun `close cancels an older autosave before writing the final snapshot`() =
+    @Test fun `flush awaits an in progress commit then saves the final snapshot`() =
         runTest {
-            val saving = CompletableDeferred<Unit>()
-            coEvery {
-                useCase.save(
-                    match {
-                        it.tabs
-                            .single()
-                            .request.url == "/old"
-                    },
-                )
-            } coAnswers {
-                saving.complete(Unit)
-                awaitCancellation()
+            val started = CompletableDeferred<Unit>()
+            val commit = CompletableDeferred<Unit>()
+            val committed = mutableListOf<String>()
+            coEvery { useCase.save(any()) } coAnswers {
+                val url =
+                    firstArg<DraftSession>()
+                        .tabs
+                        .single()
+                        .request.url
+                if (url == "/old") {
+                    started.complete(Unit)
+                    commit.await()
+                }
+                committed.add(url)
             }
-            val manager = manager(backgroundScope)
+            val manager = SessionManager(useCase, state, effects, backgroundScope)
             manager.initialize()
-            runCurrent()
             edit("/old")
             runCurrent()
             advanceTimeBy(301)
             runCurrent()
-            assertTrue(saving.isCompleted)
+            assertTrue(started.isCompleted)
             edit("/final")
-            assertTrue(manager.prepareToClose())
-            coVerify(exactly = 1) {
-                useCase.save(
-                    match {
-                        it.tabs
-                            .single()
-                            .request.url == "/final"
-                    },
+            val closing = backgroundScope.async { manager.prepareToClose() }
+            runCurrent()
+            assertFalse(closing.isCompleted)
+            commit.complete(Unit)
+            runCurrent()
+            assertTrue(closing.await())
+            assertEquals(listOf("/old", "/final"), committed)
+        }
+
+    @Test fun `failed final save reports fixed error and autosave can recover`() =
+        runTest {
+            coEvery { useCase.save(any()) } throws IllegalStateException("sensitive content")
+            val manager = SessionManager(useCase, state, effects, backgroundScope)
+            manager.initialize()
+            assertFalse(manager.prepareToClose())
+            verify(exactly = 1) {
+                effects.emit(
+                    AppSideEffect.ShowError("Drafts could not be saved. Keep Postest open and retry closing when storage is available."),
                 )
             }
-        }
-
-    @Test
-    fun `startup merges restored drafts with edits made while storage was loading`() =
-        runTest {
-            val loaded = CompletableDeferred<DraftSession?>()
-            coEvery { useCase.load() } coAnswers { loaded.await() }
-            manager(backgroundScope).initialize()
-            runCurrent()
-            edit("/typed-during-startup")
-            loaded.complete(DraftSession(tabs = listOf(DraftTab("saved", HttpRequest(name = "Saved"), true)), activeTabId = "saved"))
-            runCurrent()
-            assertEquals(listOf("saved", "initial"), state.value.tabs.map { it.id })
-            assertEquals("initial", state.value.activeTabId)
-            assertEquals(
-                "/typed-during-startup",
-                state.value.activeTab
-                    ?.request
-                    ?.url,
-            )
-        }
-
-    @Test
-    fun `a failed final save keeps the app open and autosave can recover`() =
-        runTest {
-            coEvery { useCase.save(any()) } throws IllegalStateException("storage unavailable")
-            val manager = manager(backgroundScope)
-            manager.initialize()
-            runCurrent()
-            assertFalse(manager.prepareToClose())
-            verify(exactly = 1) { effects.emit(ofType<AppSideEffect.ShowError>()) }
             coEvery { useCase.save(any()) } returns Unit
-            edit("/after-retry")
+            edit("/retry")
             runCurrent()
             advanceTimeBy(301)
             runCurrent()
-            assertTrue(manager.prepareToClose())
             coVerify {
                 useCase.save(
                     match {
                         it.tabs
                             .single()
-                            .request.url == "/after-retry"
+                            .request.url == "/retry"
                     },
                 )
             }
+            assertTrue(manager.prepareToClose())
         }
 
-    @Test
-    fun `restore failures keep a usable workspace and never expose exception content`() =
+    @Test fun `load failure returns no snapshot and never exposes exception content`() =
         runTest {
-            coEvery { useCase.load() } throws IllegalStateException("sensitive request content")
-            manager(backgroundScope).initialize()
-            runCurrent()
-            assertEquals(listOf(initial), state.value.tabs)
-            verify(exactly = 1) {
-                effects.emit(AppSideEffect.ShowError("Saved drafts could not be restored. A new workspace was opened."))
-            }
+            coEvery { useCase.load() } throws IllegalStateException("sensitive content")
+            val manager = SessionManager(useCase, state, effects, backgroundScope)
+            assertNull(manager.load())
+            assertEquals(listOf(tab), state.value.tabs)
+            verify { effects.emit(AppSideEffect.ShowError("Saved drafts could not be restored. A new workspace was opened.")) }
         }
 
-    @Test
-    fun `loading changes do not rewrite request drafts`() =
+    @Test fun `loading and closing flags do not rewrite drafts`() =
         runTest {
-            manager(backgroundScope).initialize()
-            runCurrent()
-            state.value = state.value.copy(tabs = listOf(initial.copy(isLoading = true)))
+            val manager = SessionManager(useCase, state, effects, backgroundScope)
+            manager.initialize()
+            state.value = state.value.copy(tabs = listOf(tab.copy(isLoading = true, executionId = "execution")), isClosing = true)
             runCurrent()
             advanceTimeBy(500)
             runCurrent()
             coVerify(exactly = 0) { useCase.save(any()) }
         }
 
-    @Test
-    fun `restore keeps the last response and error`() =
+    @Test fun `snapshot preserves request response errors links and inactive drafts while bounding response size`() =
         runTest {
-            val response = response()
-            coEvery { useCase.load() } returns
-                DraftSession(
+            val manager = SessionManager(useCase, state, effects, backgroundScope)
+            manager.initialize()
+            val body = "x".repeat(MAX_PERSISTED_RESPONSE_BYTES + 100)
+            val response = HttpResponse(200, "OK", emptyMap(), body, "text/plain", body.length.toLong(), ResponseTime(1))
+            val inactive = RequestBody.Json("{}")
+            val active = RequestBody.Raw("draft", "text/custom")
+            state.value =
+                state.value.copy(
                     tabs =
                         listOf(
-                            DraftTab(
-                                id = "tab",
-                                request = HttpRequest(),
-                                isDirty = false,
+                            tab.copy(
+                                request = tab.request.copy(body = active),
+                                bodyDrafts = mapOf(inactive::class to inactive, active::class to active),
+                                collectionItemId = "item",
                                 response = response,
-                                error = "previous failure",
+                                error = "previous error",
+                                isDirty = true,
                             ),
                         ),
-                    activeTabId = "tab",
                 )
-            manager(backgroundScope).initialize()
-            runCurrent()
-
-            val restored = state.value.tabs.single()
-            assertEquals(response, restored.response)
-            assertEquals("previous failure", restored.error)
-        }
-
-    @Test
-    fun `autosave stores the latest response and error`() =
-        runTest {
-            val response = response()
-            val manager = manager(backgroundScope)
-            manager.initialize()
-            runCurrent()
-            state.value = state.value.copy(tabs = listOf(initial.copy(response = response, error = "previous failure")))
-            runCurrent()
-            advanceTimeBy(301)
-            runCurrent()
-
+            assertTrue(manager.prepareToClose())
             coVerify {
                 useCase.save(
                     match {
-                        it.tabs.single().response == response && it.tabs.single().error == "previous failure"
+                        val saved = it.tabs.single()
+                        saved.bodyDrafts == listOf(inactive) && saved.request.body == active && saved.isDirty &&
+                            saved.collectionItemId == "item" && saved.error == "previous error" &&
+                            saved.response!!.truncated && saved.response!!.body.length == MAX_PERSISTED_RESPONSE_BYTES
                     },
                 )
             }
         }
 
-    @Test
-    fun `closing a draft removes it from the next saved workspace`() =
+    @Test fun `closing a tab removes it from the saved workspace`() =
         runTest {
             val second = TabState(id = "second")
-            state.value = state.value.copy(tabs = listOf(initial, second))
-            val manager = manager(backgroundScope)
+            state.value = state.value.copy(tabs = listOf(tab, second))
+            val manager = SessionManager(useCase, state, effects, backgroundScope)
             manager.initialize()
-            runCurrent()
             state.value = state.value.copy(tabs = listOf(second), activeTabId = second.id)
             assertTrue(manager.prepareToClose())
-            coVerify { useCase.save(match { it.tabs.map { tab -> tab.id } == listOf("second") && it.activeTabId == "second" }) }
-        }
-
-    @Test
-    fun `closing during startup waits for saved drafts before flushing`() =
-        runTest {
-            val loaded = CompletableDeferred<DraftSession?>()
-            coEvery { useCase.load() } coAnswers { loaded.await() }
-            val manager = manager(backgroundScope)
-            manager.initialize()
-            val closing = backgroundScope.async { manager.prepareToClose() }
-            runCurrent()
-            assertFalse(closing.isCompleted)
-            loaded.complete(DraftSession(tabs = listOf(DraftTab("saved", HttpRequest(), true)), activeTabId = "saved"))
-            runCurrent()
-            assertTrue(closing.await())
-            coVerify(exactly = 1) { useCase.save(match { it.tabs.single().id == "saved" }) }
-        }
-
-    @Test
-    fun `restore keeps the collection item linked to a tab`() =
-        runTest {
-            coEvery { useCase.load() } returns
-                DraftSession(
-                    tabs = listOf(DraftTab(id = "tab", request = HttpRequest(), isDirty = false, collectionItemId = "item-1")),
-                    activeTabId = "tab",
-                )
-            manager(backgroundScope).initialize()
-            runCurrent()
-            assertEquals(
-                "item-1",
-                state.value.tabs
-                    .single()
-                    .collectionItemId,
-            )
-        }
-
-    @Test
-    fun `autosave keeps the collection item link`() =
-        runTest {
-            val linked = initial.copy(collectionItemId = "item-1", request = initial.request.copy(url = "/linked"))
-            state.value = state.value.copy(tabs = listOf(linked))
-            val manager = manager(backgroundScope)
-            manager.initialize()
-            runCurrent()
-            state.value = state.value.copy(tabs = listOf(linked.copy(request = linked.request.copy(url = "/edited"))))
-            runCurrent()
-            advanceTimeBy(301)
-            runCurrent()
-            coVerify { useCase.save(match { it.tabs.single().collectionItemId == "item-1" }) }
-        }
-
-    @Test
-    fun `autosave truncates oversized response bodies`() =
-        runTest {
-            val body = "x".repeat(MAX_PERSISTED_RESPONSE_BYTES + 100)
-            val response =
-                HttpResponse(
-                    statusCode = 200,
-                    statusText = "OK",
-                    headers = emptyMap(),
-                    body = body,
-                    contentType = "text/plain",
-                    size = body.length.toLong(),
-                    time = ResponseTime(total = 100),
-                )
-            val withResponse = initial.copy(response = response, request = initial.request.copy(url = "/large"))
-            state.value = state.value.copy(tabs = listOf(withResponse))
-            val manager = manager(backgroundScope)
-            manager.initialize()
-            runCurrent()
-            state.value = state.value.copy(tabs = listOf(withResponse.copy(request = withResponse.request.copy(url = "/edited"))))
-            runCurrent()
-            advanceTimeBy(301)
-            runCurrent()
-
-            coVerify {
-                useCase.save(
-                    match {
-                        val saved = it.tabs.single().response!!
-                        saved.truncated && saved.body.length == MAX_PERSISTED_RESPONSE_BYTES
-                    },
-                )
-            }
+            coVerify { useCase.save(match { it.tabs.single().id == "second" && it.activeTabId == "second" }) }
         }
 }

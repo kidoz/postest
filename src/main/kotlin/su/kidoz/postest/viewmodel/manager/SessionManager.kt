@@ -5,131 +5,98 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.dropWhile
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import su.kidoz.postest.domain.model.DraftSession
-import su.kidoz.postest.domain.model.DraftTab
-import su.kidoz.postest.domain.model.RequestBody
-import su.kidoz.postest.domain.model.limitBodyForStorage
 import su.kidoz.postest.domain.usecase.ManageSessionUseCase
 import su.kidoz.postest.viewmodel.AppSideEffect
-import su.kidoz.postest.viewmodel.AppState
 import su.kidoz.postest.viewmodel.SideEffectEmitter
-import su.kidoz.postest.viewmodel.StateUpdater
-import su.kidoz.postest.viewmodel.TabState
+import su.kidoz.postest.viewmodel.WorkspaceState
+import su.kidoz.postest.viewmodel.toDraftSession
 
-/** Restores once, autosaves tab state (requests, drafts, responses), and flushes before an orderly exit. */
+/** Observes recovery snapshots. It cannot mutate live tabs or restore presentation state. */
 class SessionManager(
     private val useCase: ManageSessionUseCase,
-    private val state: StateFlow<AppState>,
-    private val updater: StateUpdater<AppState>,
+    private val state: StateFlow<WorkspaceState>,
     private val effects: SideEffectEmitter,
     private val scope: CoroutineScope,
 ) {
-    private var startup: Job? = null
     private var observer: Job? = null
+    private val writer = Mutex()
+    private val closing = Mutex()
+    private var nextRevision = 0L
+    private var committedRevision = -1L
     private var saveErrorShown = false
 
-    fun initialize() {
-        val initial = snapshot(state.value)
-        startup =
-            scope.launch {
-                try {
-                    useCase.load()?.let { session -> restore(session, initial) }
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (_: Exception) {
-                    // Never include serialization errors: they can contain request secrets.
-                    effects.emit(AppSideEffect.ShowError("Saved drafts could not be restored. A new workspace was opened."))
-                }
-                observe()
-            }
-    }
+    /** Loading is coordinated by MainViewModel, which applies one typed restore command. */
+    suspend fun load(): DraftSession? =
+        try {
+            useCase.load()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            effects.emit(AppSideEffect.ShowError("Saved drafts could not be restored. A new workspace was opened."))
+            null
+        }
 
     @OptIn(FlowPreview::class)
-    private fun observe() {
+    fun initialize() {
+        if (observer?.isActive == true) return
+        val baseline = state.value.toDraftSession()
         observer =
             scope.launch(start = CoroutineStart.UNDISPATCHED) {
                 state
-                    .map(::snapshot)
+                    .map { it.toDraftSession() }
                     .distinctUntilChanged()
-                    .drop(1)
+                    .dropWhile { it == baseline }
                     .debounce(300)
                     .collect { save(it) }
             }
     }
 
-    private fun restore(
-        session: DraftSession,
-        initial: DraftSession,
-    ) {
-        val restored =
-            session.tabs.map { tab ->
-                TabState(
-                    id = tab.id,
-                    request = tab.request,
-                    collectionItemId = tab.collectionItemId,
-                    response = tab.response,
-                    error = tab.error,
-                    isDirty = tab.isDirty,
-                    bodyDrafts = tab.bodyDrafts.associateBy { it::class },
-                )
-            }
-        updater.update { current ->
-            val unchanged = snapshot(current) == initial
-            val tabs = if (unchanged) restored else (restored + current.tabs).distinctBy { it.id }
-            val requestedActive = if (unchanged) session.activeTabId else current.activeTabId
-            current.copy(tabs = tabs, activeTabId = requestedActive?.takeIf { id -> tabs.any { it.id == id } } ?: tabs.first().id)
-        }
-    }
-
-    /** Called before disposing the UI so even edits inside the debounce window survive. */
-    suspend fun prepareToClose(): Boolean {
-        startup?.join()
-        observer?.cancelAndJoin()
-        val saved = save(snapshot(state.value))
-        if (!saved) observe()
-        return saved
-    }
-
-    private suspend fun save(session: DraftSession): Boolean =
-        try {
-            useCase.save(session)
-            saveErrorShown = false
-            true
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            if (!saveErrorShown) {
-                effects.emit(
-                    AppSideEffect.ShowError("Drafts could not be saved. Keep Postest open and retry closing when storage is available."),
-                )
-                saveErrorShown = true
-            }
-            false
+    /** The caller freezes workspace mutations before this flush. Await writes rather than cancelling their commits. */
+    suspend fun prepareToClose(): Boolean =
+        closing.withLock {
+            observer?.cancelAndJoin()
+            val saved = save(state.value.toDraftSession())
+            if (!saved) initialize()
+            saved
         }
 
-    private fun snapshot(app: AppState): DraftSession =
-        DraftSession(
-            tabs =
-                app.tabs.map { tab ->
-                    val activeType = (tab.request.body ?: RequestBody.None)::class
-                    val inactiveDrafts = tab.bodyDrafts.values.filter { it::class != activeType && it !is RequestBody.None }
-                    DraftTab(
-                        id = tab.id,
-                        request = tab.request,
-                        isDirty = tab.isDirty,
-                        bodyDrafts = inactiveDrafts,
-                        collectionItemId = tab.collectionItemId,
-                        response = tab.response?.limitBodyForStorage(),
-                        error = tab.error,
-                    )
-                },
-            activeTabId = app.activeTabId,
-        )
+    private suspend fun save(session: DraftSession): Boolean {
+        val revision = nextRevision++
+        return writer.withLock {
+            if (revision <= committedRevision) return@withLock true
+            // JDBC writes are synchronous: cancellation cannot safely interrupt a commit already in progress.
+            withContext(NonCancellable) {
+                try {
+                    useCase.save(session)
+                    committedRevision = revision
+                    saveErrorShown = false
+                    true
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    if (!saveErrorShown) {
+                        effects.emit(
+                            AppSideEffect.ShowError(
+                                "Drafts could not be saved. Keep Postest open and retry closing when storage is available.",
+                            ),
+                        )
+                        saveErrorShown = true
+                    }
+                    false
+                }
+            }
+        }
+    }
 }

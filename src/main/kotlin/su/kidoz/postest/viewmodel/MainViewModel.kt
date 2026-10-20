@@ -1,17 +1,30 @@
 package su.kidoz.postest.viewmodel
 
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import su.kidoz.postest.domain.model.Environment
+import su.kidoz.postest.domain.model.EnvironmentSnapshot
+import su.kidoz.postest.domain.model.ExecutionContext
 import su.kidoz.postest.domain.model.HistoryEntry
 import su.kidoz.postest.domain.model.HttpRequest
 import su.kidoz.postest.domain.model.RequestBody
@@ -44,6 +57,7 @@ data class TabState(
     val collectionItemId: String? = null,
     val response: su.kidoz.postest.domain.model.HttpResponse? = null,
     val isLoading: Boolean = false,
+    val executionId: String? = null,
     val isDirty: Boolean = false,
     val error: String? = null,
     val bodyDrafts: Map<KClass<out RequestBody>, RequestBody> = emptyMap(),
@@ -60,6 +74,8 @@ data class AppState(
     val showEnvironmentDialog: Boolean = false,
     val showNewCollectionDialog: Boolean = false,
     val isInitialized: Boolean = false,
+    val initializationError: String? = null,
+    val isClosing: Boolean = false,
     val pendingCloseTabIds: List<String> = emptyList(),
 ) {
     val activeTab: TabState?
@@ -98,81 +114,97 @@ class MainViewModel(
     private val supervisorJob = SupervisorJob()
     private val viewModelScope = CoroutineScope(supervisorJob + Dispatchers.Main)
 
-    private val _state =
-        MutableStateFlow(
-            AppState().let { state ->
-                state.copy(activeTabId = state.tabs.firstOrNull()?.id)
-            },
-        )
-    val state: StateFlow<AppState> = _state.asStateFlow()
+    private val workspace = WorkspaceStore()
 
+    private data class PresentationState(
+        val darkTheme: Boolean = false,
+        val environmentDialog: Boolean = false,
+        val collectionDialog: Boolean = false,
+    )
+
+    private val presentation = MutableStateFlow(PresentationState())
     private val _sideEffect = Channel<AppSideEffect>(Channel.BUFFERED)
     val sideEffect = _sideEffect.receiveAsFlow()
-
-    // Shared state updater for all managers
-    private val stateUpdater = StateUpdater<AppState> { transform -> _state.update(transform) }
-
-    // Feature Managers
-    private val tabManager = TabManager(stateUpdater) { _state.value }
-
-    private val sessionManager = SessionManager(manageSessionUseCase, state, stateUpdater, this, viewModelScope)
-
-    private val historyManager =
-        HistoryManager(
-            manageHistoryUseCase,
-            stateUpdater,
-            this,
-            viewModelScope,
-        )
-
-    private val requestExecutionManager =
-        RequestExecutionManager(
-            executeRequestUseCase,
-            tabManager,
-            historyManager,
-            this,
-            viewModelScope,
-        )
-
+    private val tabManager = TabManager(workspace)
+    private val sessionManager = SessionManager(manageSessionUseCase, workspace.state, this, viewModelScope)
+    private val historyManager = HistoryManager(manageHistoryUseCase, this, viewModelScope)
+    private val requestExecutionManager = RequestExecutionManager(executeRequestUseCase, workspace, historyManager, this, viewModelScope)
     private val collectionManager =
-        CollectionManager(
-            manageCollectionsUseCase,
-            stateUpdater,
-            this,
-            { _state.value },
-            viewModelScope,
-        )
-
-    private val environmentManager =
-        EnvironmentManager(
-            manageEnvironmentsUseCase,
-            stateUpdater,
-            this,
-            { _state.value },
-            viewModelScope,
-        )
-
+        CollectionManager(manageCollectionsUseCase, this, viewModelScope) {
+            presentation.update { it.copy(collectionDialog = false) }
+        }
+    private val environmentManager = EnvironmentManager(manageEnvironmentsUseCase, this, viewModelScope)
     private val importExportManager =
-        ImportExportManager(
-            importCollectionUseCase,
-            exportCollectionUseCase,
-            { _state.value },
-            this,
+        ImportExportManager(importCollectionUseCase, exportCollectionUseCase, { state.value }, this, viewModelScope)
+
+    private data class Observed<T>(
+        val value: T,
+        val loaded: Boolean = false,
+        val error: String? = null,
+    )
+
+    private fun <T> observe(
+        source: Flow<T>,
+        initial: T,
+        name: String,
+    ): Flow<Observed<T>> =
+        source
+            .map { Observed(it, loaded = true) }
+            .onStart { emit(Observed(initial)) }
+            .catch { error ->
+                if (error is CancellationException) throw error
+                val message = "$name could not be loaded"
+                this@MainViewModel.emit(AppSideEffect.ShowError(message))
+                emit(Observed(initial, loaded = true, error = message))
+            }
+
+    private val savedData =
+        combine(
+            observe(collectionManager.collections, emptyList(), "Collections"),
+            observe(environmentManager.snapshot, EnvironmentSnapshot(emptyList()), "Environments"),
+            observe(historyManager.history, emptyList(), "History"),
+        ) { collections, environments, history -> Triple(collections, environments, history) }
+
+    val state: StateFlow<AppState> =
+        combine(workspace.state, presentation, savedData) { tabs, ui, data ->
+            val (collections, environments, history) = data
+            AppState(
+                tabs = tabs.tabs,
+                activeTabId = tabs.activeTabId,
+                pendingCloseTabIds = tabs.pendingCloseTabIds,
+                collections = collections.value,
+                environments = environments.value.environments,
+                activeEnvironmentId = environments.value.activeEnvironmentId,
+                history = history.value,
+                isDarkTheme = ui.darkTheme,
+                showEnvironmentDialog = ui.environmentDialog,
+                showNewCollectionDialog = ui.collectionDialog,
+                isInitialized = tabs.isRestored && collections.loaded && environments.loaded && history.loaded,
+                initializationError = collections.error ?: environments.error ?: history.error,
+                isClosing = tabs.isClosing,
+            )
+        }.stateIn(
             viewModelScope,
+            SharingStarted.Eagerly,
+            AppState(
+                tabs = workspace.state.value.tabs,
+                activeTabId = workspace.state.value.activeTabId,
+            ),
         )
+
+    private val closing = Mutex()
+    private val initialWorkspace = workspace.state.value.toDraftSession()
+    private val startup: Job =
+        viewModelScope.launch {
+            val session = sessionManager.load()
+            workspace.dispatch(WorkspaceCommand.Restore(session, initialWorkspace))
+            sessionManager.initialize()
+        }
 
     init {
-        initialize()
-    }
-
-    private fun initialize() {
-        sessionManager.initialize()
-        // Initialize all managers
-        collectionManager.initialize()
-        environmentManager.initialize()
-        historyManager.initialize()
-
-        _state.update { it.copy(isInitialized = true) }
+        viewModelScope.launch {
+            workspace.state.collect { requestExecutionManager.cancelMissingTabs(it.tabs.map { tab -> tab.id }.toSet()) }
+        }
     }
 
     // SideEffectEmitter implementation
@@ -183,7 +215,7 @@ class MainViewModel(
     // ========== Tab Operations (delegated to TabManager) ==========
 
     fun updateRequest(request: HttpRequest) {
-        val activeTabId = _state.value.activeTabId ?: return
+        val activeTabId = workspace.state.value.activeTabId ?: return
         tabManager.updateRequest(activeTabId, request)
     }
 
@@ -237,16 +269,22 @@ class MainViewModel(
     // ========== Request Operations (delegated to RequestExecutionManager) ==========
 
     fun sendRequest() {
+        if (workspace.state.value.isClosing) return
+        if (!state.value.isInitialized || state.value.initializationError != null) {
+            emit(AppSideEffect.ShowError("Wait for workspace data to load before sending a request"))
+            return
+        }
         val activeTab = tabManager.getActiveTab() ?: return
-        val collectionVariables =
+        val variables =
             activeTab.collectionItemId
-                ?.let { itemId ->
-                    _state.value.collections
-                        .firstOrNull { it.containsItem(itemId) }
+                ?.let { id ->
+                    state.value.collections
+                        .firstOrNull { it.containsItem(id) }
                         ?.variables
-                }
-                ?: emptyList()
-        requestExecutionManager.sendRequest(activeTab.id, activeTab.request, collectionVariables)
+                }.orEmpty()
+        environmentManager.captureEnvironment { environment ->
+            requestExecutionManager.sendRequest(activeTab.id, activeTab.request, variables, ExecutionContext(environment, variables))
+        }
     }
 
     fun cancelRequest() {
@@ -257,11 +295,11 @@ class MainViewModel(
     // ========== Collection Operations (delegated to CollectionManager) ==========
 
     fun showNewCollectionDialog() {
-        collectionManager.showNewCollectionDialog()
+        presentation.update { it.copy(collectionDialog = true) }
     }
 
     fun hideNewCollectionDialog() {
-        collectionManager.hideNewCollectionDialog()
+        presentation.update { it.copy(collectionDialog = false) }
     }
 
     fun createCollection(name: String) {
@@ -316,11 +354,11 @@ class MainViewModel(
     // ========== Environment Operations (delegated to EnvironmentManager) ==========
 
     fun showEnvironmentDialog() {
-        environmentManager.showEnvironmentDialog()
+        presentation.update { it.copy(environmentDialog = true) }
     }
 
     fun hideEnvironmentDialog() {
-        environmentManager.hideEnvironmentDialog()
+        presentation.update { it.copy(environmentDialog = false) }
     }
 
     fun selectEnvironment(environmentId: String?) {
@@ -361,12 +399,20 @@ class MainViewModel(
     // ========== UI State ==========
 
     fun toggleTheme() {
-        _state.update { it.copy(isDarkTheme = !it.isDarkTheme) }
+        presentation.update { it.copy(darkTheme = !it.darkTheme) }
     }
 
     // ========== Cleanup ==========
 
-    suspend fun prepareToClose(): Boolean = sessionManager.prepareToClose()
+    suspend fun prepareToClose(): Boolean =
+        closing.withLock {
+            startup.join()
+            workspace.dispatch(WorkspaceCommand.BeginClosing)
+            requestExecutionManager.quiesce()
+            val saved = sessionManager.prepareToClose()
+            if (!saved) workspace.dispatch(WorkspaceCommand.Resume)
+            saved
+        }
 
     fun cleanup() {
         logger.info { "MainViewModel cleanup: cancelling all coroutines" }

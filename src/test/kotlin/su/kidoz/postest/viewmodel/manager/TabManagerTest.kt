@@ -5,9 +5,9 @@ import su.kidoz.postest.domain.model.FormFieldType
 import su.kidoz.postest.domain.model.HttpRequest
 import su.kidoz.postest.domain.model.KeyValue
 import su.kidoz.postest.domain.model.RequestBody
-import su.kidoz.postest.viewmodel.AppState
-import su.kidoz.postest.viewmodel.StateUpdater
 import su.kidoz.postest.viewmodel.TabState
+import su.kidoz.postest.viewmodel.WorkspaceState
+import su.kidoz.postest.viewmodel.WorkspaceStore
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -15,8 +15,13 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class TabManagerTest {
-    private var state = AppState()
-    private val manager = TabManager(StateUpdater { state = it(state) }) { state }
+    private var workspace = WorkspaceStore()
+    private var state: WorkspaceState
+        get() = workspace.state.value
+        set(value) {
+            workspace = WorkspaceStore(value)
+        }
+    private val manager get() = TabManager(workspace)
 
     @Test
     fun `cancelling close preserves the full modified request`() {
@@ -36,7 +41,7 @@ class TabManagerTest {
         val first = TabState(id = "first")
         val edited = TabState(id = "edited", isDirty = true)
         val next = TabState(id = "next")
-        state = AppState(tabs = listOf(first, edited, next), activeTabId = edited.id)
+        state = WorkspaceState(tabs = listOf(first, edited, next), activeTabId = edited.id)
         manager.closeTab(edited.id)
         assertEquals(3, state.tabs.size)
         manager.discardPendingTabs()
@@ -48,14 +53,14 @@ class TabManagerTest {
     @Test
     fun `closing last tab selects the preceding neighbor`() {
         val tabs = listOf(TabState(id = "one"), TabState(id = "two"), TabState(id = "three"))
-        state = AppState(tabs = tabs, activeTabId = "three")
+        state = WorkspaceState(tabs = tabs, activeTabId = "three")
         manager.closeTab("three")
         assertEquals("two", state.activeTabId)
     }
 
     @Test
     fun `discarding the only modified tab leaves a clean workspace`() {
-        state = AppState(tabs = listOf(TabState(id = "only", isDirty = true)), activeTabId = "only")
+        state = WorkspaceState(tabs = listOf(TabState(id = "only", isDirty = true)), activeTabId = "only")
         manager.closeTab("only")
         manager.discardPendingTabs()
         assertEquals(1, state.tabs.size)
@@ -154,7 +159,7 @@ class TabManagerTest {
     @Test
     fun `close all tabs leaves a fresh empty tab`() {
         state =
-            AppState(
+            WorkspaceState(
                 tabs = listOf(TabState(id = "one"), TabState(id = "two"), TabState(id = "three")),
                 activeTabId = "two",
             )
@@ -168,7 +173,7 @@ class TabManagerTest {
     @Test
     fun `close other tabs keeps the referenced tab`() {
         state =
-            AppState(
+            WorkspaceState(
                 tabs = listOf(TabState(id = "one"), TabState(id = "two"), TabState(id = "three")),
                 activeTabId = "two",
             )
@@ -182,7 +187,7 @@ class TabManagerTest {
     @Test
     fun `close other tabs selects the kept tab when the active tab is removed`() {
         state =
-            AppState(
+            WorkspaceState(
                 tabs = listOf(TabState(id = "one"), TabState(id = "two"), TabState(id = "three")),
                 activeTabId = "one",
             )
@@ -196,7 +201,7 @@ class TabManagerTest {
     @Test
     fun `close tabs to the left and right use the referenced tab`() {
         state =
-            AppState(
+            WorkspaceState(
                 tabs = listOf("one", "two", "three", "four").map { TabState(id = it) },
                 activeTabId = "three",
             )
@@ -213,7 +218,7 @@ class TabManagerTest {
     @Test
     fun `bulk close waits for confirmation when an affected tab is dirty`() {
         state =
-            AppState(
+            WorkspaceState(
                 tabs = listOf(TabState(id = "clean"), TabState(id = "dirty", isDirty = true), TabState(id = "third")),
                 activeTabId = "clean",
             )
@@ -232,7 +237,7 @@ class TabManagerTest {
     @Test
     fun `closing other tabs does not ask about a dirty tab that is kept`() {
         state =
-            AppState(
+            WorkspaceState(
                 tabs = listOf(TabState(id = "dirty", isDirty = true), TabState(id = "clean")),
                 activeTabId = "dirty",
             )
