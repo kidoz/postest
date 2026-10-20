@@ -98,8 +98,8 @@ UPDATE CollectionItem SET name = ?, description = ?, request_json = ?, position 
 renameCollectionItem:
 UPDATE CollectionItem SET name = ? WHERE id = ?;
 
-moveCollectionItemToCollectionRoot:
-UPDATE CollectionItem SET parent_folder_id = NULL, position = ? WHERE id = ?;
+moveCollectionItem:
+UPDATE CollectionItem SET parent_folder_id = ?, position = ? WHERE id = ?;
 
 deleteCollectionItem:
 DELETE FROM CollectionItem WHERE id = ?;

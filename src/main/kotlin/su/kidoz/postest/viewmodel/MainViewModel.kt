@@ -270,8 +270,11 @@ class MainViewModel(
         collectionManager.addFolderToCollection(collectionId, name, parentFolderId)
     }
 
-    fun moveCollectionItemToCollectionRoot(itemId: String) {
-        collectionManager.moveCollectionItemToCollectionRoot(itemId)
+    fun moveCollectionItem(
+        itemId: String,
+        targetFolderId: String?,
+    ) {
+        collectionManager.moveCollectionItem(itemId, targetFolderId)
     }
 
     fun deleteCollectionItem(itemId: String) {

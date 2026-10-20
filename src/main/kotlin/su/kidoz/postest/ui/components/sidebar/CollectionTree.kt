@@ -41,8 +41,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -74,12 +76,31 @@ import su.kidoz.postest.ui.components.common.TextInputDialog
 import su.kidoz.postest.ui.theme.AppTheme
 import su.kidoz.postest.util.requestDisplayName
 
+private sealed interface DropTarget {
+    data object Root : DropTarget
+
+    data class Folder(
+        val id: String,
+    ) : DropTarget
+}
+
 private data class ItemDragCallbacks(
     val onStart: (CollectionItem, Offset) -> Unit,
     val onMove: (Offset) -> Unit,
     val onEnd: () -> Unit,
     val onCancel: () -> Unit,
 )
+
+private fun canDropInto(
+    item: CollectionItem,
+    folderId: String,
+): Boolean = !item.containsFolder(folderId)
+
+private fun CollectionItem.containsFolder(folderId: String): Boolean =
+    when (this) {
+        is CollectionItem.Request -> false
+        is CollectionItem.Folder -> id == folderId || items.any { it.containsFolder(folderId) }
+    }
 
 @Composable
 private fun AutoScrollDuringDrag(
@@ -116,31 +137,26 @@ private fun AutoScrollDuringDrag(
 @Composable
 private fun rememberItemDragModifier(
     item: CollectionItem,
-    enabled: Boolean,
     callbacks: ItemDragCallbacks,
 ): Modifier {
     val currentCallbacks by rememberUpdatedState(callbacks)
     val coordinates = remember { mutableStateOf<LayoutCoordinates?>(null) }
-    return remember(item, enabled) {
-        if (!enabled) {
-            Modifier
-        } else {
-            Modifier
-                .onGloballyPositioned { coordinates.value = it }
-                .pointerInput(item.id) {
-                    detectDragGestures(
-                        onDragStart = { offset ->
-                            coordinates.value?.let { currentCallbacks.onStart(item, it.localToRoot(offset)) }
-                        },
-                        onDrag = { change, _ ->
-                            change.consume()
-                            coordinates.value?.let { currentCallbacks.onMove(it.localToRoot(change.position)) }
-                        },
-                        onDragEnd = { currentCallbacks.onEnd() },
-                        onDragCancel = { currentCallbacks.onCancel() },
-                    )
-                }
-        }
+    return remember(item) {
+        Modifier
+            .onGloballyPositioned { coordinates.value = it }
+            .pointerInput(item.id) {
+                detectDragGestures(
+                    onDragStart = { offset ->
+                        coordinates.value?.let { currentCallbacks.onStart(item, it.localToRoot(offset)) }
+                    },
+                    onDrag = { change, _ ->
+                        change.consume()
+                        coordinates.value?.let { currentCallbacks.onMove(it.localToRoot(change.position)) }
+                    },
+                    onDragEnd = { currentCallbacks.onEnd() },
+                    onDragCancel = { currentCallbacks.onCancel() },
+                )
+            }
     }
 }
 
@@ -158,7 +174,7 @@ fun CollectionTree(
     onDeleteCollection: (RequestCollection) -> Unit,
     onRenameItem: (CollectionItem, String) -> Unit,
     onDeleteItem: (CollectionItem) -> Unit,
-    onRemoveFromFolder: (CollectionItem) -> Unit,
+    onMoveItem: (CollectionItem, String?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -248,7 +264,7 @@ fun CollectionTree(
                         onDeleteCollection = { onDeleteCollection(collection) },
                         onRenameItem = onRenameItem,
                         onDeleteItem = onDeleteItem,
-                        onRemoveFromFolder = onRemoveFromFolder,
+                        onMoveItem = onMoveItem,
                         onDragPositionChange = { dragPosition = it },
                     )
                 }
@@ -296,7 +312,7 @@ private fun CollectionNode(
     onDeleteCollection: () -> Unit,
     onRenameItem: (CollectionItem, String) -> Unit,
     onDeleteItem: (CollectionItem) -> Unit,
-    onRemoveFromFolder: (CollectionItem) -> Unit,
+    onMoveItem: (CollectionItem, String?) -> Unit,
     onDragPositionChange: (Offset?) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(true) }
@@ -307,10 +323,23 @@ private fun CollectionNode(
     var draggedItem by remember { mutableStateOf<CollectionItem?>(null) }
     var dragPosition by remember { mutableStateOf<Offset?>(null) }
     var headerBounds by remember { mutableStateOf<Rect?>(null) }
+    val folderBounds = remember { mutableStateMapOf<String, Rect>() }
 
-    val isDropTarget =
-        draggedItem != null &&
-            dragPosition?.let { headerBounds?.contains(it) } == true
+    fun resolveDropTarget(): DropTarget? {
+        val item = draggedItem ?: return null
+        val position = dragPosition ?: return null
+        val folderId =
+            folderBounds.entries
+                .firstOrNull { (id, bounds) -> bounds.contains(position) && canDropInto(item, id) }
+                ?.key
+        return when {
+            folderId != null -> DropTarget.Folder(folderId)
+            headerBounds?.contains(position) == true -> DropTarget.Root
+            else -> null
+        }
+    }
+
+    val dropTarget = resolveDropTarget()
     val dragCallbacks =
         ItemDragCallbacks(
             onStart = { item, position ->
@@ -324,13 +353,16 @@ private fun CollectionNode(
             },
             onEnd = {
                 val item = draggedItem
-                val position = dragPosition
-                val bounds = headerBounds
+                val target = resolveDropTarget()
                 draggedItem = null
                 dragPosition = null
                 onDragPositionChange(null)
-                if (item != null && position != null && bounds != null && bounds.contains(position)) {
-                    onRemoveFromFolder(item)
+                if (item != null) {
+                    when (target) {
+                        DropTarget.Root -> onMoveItem(item, null)
+                        is DropTarget.Folder -> onMoveItem(item, target.id)
+                        null -> Unit
+                    }
                 }
             },
             onCancel = {
@@ -347,10 +379,10 @@ private fun CollectionNode(
                     .fillMaxWidth()
                     .onGloballyPositioned { headerBounds = it.boundsInRoot() }
                     .background(
-                        if (isDropTarget) {
-                            MaterialTheme.colorScheme.primaryContainer
-                        } else {
-                            Color.Transparent
+                        when {
+                            dropTarget == DropTarget.Root -> MaterialTheme.colorScheme.primaryContainer
+                            draggedItem != null -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+                            else -> Color.Transparent
                         },
                     ).clickable { expanded = !expanded }
                     .padding(vertical = 4.dp),
@@ -423,7 +455,11 @@ private fun CollectionNode(
                     onCreateFolder = onCreateFolder,
                     onRenameItem = onRenameItem,
                     onDeleteItem = onDeleteItem,
-                    onRemoveFromFolder = onRemoveFromFolder,
+                    draggedItem = draggedItem,
+                    dropTargetFolderId = (dropTarget as? DropTarget.Folder)?.id,
+                    onFolderHeaderBounds = { folderId, bounds ->
+                        if (bounds == null) folderBounds.remove(folderId) else folderBounds[folderId] = bounds
+                    },
                     dragCallbacks = dragCallbacks,
                 )
             }
@@ -531,10 +567,12 @@ private fun CollectionItemNode(
     onCreateFolder: (parentFolderId: String?, name: String) -> Unit,
     onRenameItem: (CollectionItem, String) -> Unit,
     onDeleteItem: (CollectionItem) -> Unit,
-    onRemoveFromFolder: (CollectionItem) -> Unit,
+    draggedItem: CollectionItem?,
+    dropTargetFolderId: String?,
+    onFolderHeaderBounds: (folderId: String, bounds: Rect?) -> Unit,
     dragCallbacks: ItemDragCallbacks,
 ) {
-    val dragModifier = rememberItemDragModifier(item, depth > 1, dragCallbacks)
+    val dragModifier = rememberItemDragModifier(item, dragCallbacks)
 
     when (item) {
         is CollectionItem.Request -> {
@@ -545,7 +583,6 @@ private fun CollectionItemNode(
                 selectedCollectionItemId = selectedCollectionItemId,
                 onRename = { newName -> onRenameItem(item, newName) },
                 onDelete = { onDeleteItem(item) },
-                onRemoveFromFolder = { onRemoveFromFolder(item) },
                 dragModifier = dragModifier,
             )
         }
@@ -559,7 +596,9 @@ private fun CollectionItemNode(
                 onCreateFolder = onCreateFolder,
                 onRenameItem = onRenameItem,
                 onDeleteItem = onDeleteItem,
-                onRemoveFromFolder = onRemoveFromFolder,
+                draggedItem = draggedItem,
+                dropTargetFolderId = dropTargetFolderId,
+                onFolderHeaderBounds = onFolderHeaderBounds,
                 dragCallbacks = dragCallbacks,
                 dragModifier = dragModifier,
             )
@@ -575,7 +614,6 @@ private fun RequestItemNode(
     selectedCollectionItemId: String?,
     onRename: (String) -> Unit,
     onDelete: () -> Unit,
-    onRemoveFromFolder: () -> Unit,
     dragModifier: Modifier,
 ) {
     val extendedColors = AppTheme.extendedColors
@@ -652,15 +690,6 @@ private fun RequestItemNode(
                     showMenu = false
                     showDeleteConfirm = true
                 },
-                onRemoveFromFolder =
-                    if (depth > 1) {
-                        {
-                            showMenu = false
-                            onRemoveFromFolder()
-                        }
-                    } else {
-                        null
-                    },
             )
         }
     }
@@ -704,7 +733,9 @@ private fun FolderItemNode(
     onCreateFolder: (parentFolderId: String?, name: String) -> Unit,
     onRenameItem: (CollectionItem, String) -> Unit,
     onDeleteItem: (CollectionItem) -> Unit,
-    onRemoveFromFolder: (CollectionItem) -> Unit,
+    draggedItem: CollectionItem?,
+    dropTargetFolderId: String?,
+    onFolderHeaderBounds: (folderId: String, bounds: Rect?) -> Unit,
     dragCallbacks: ItemDragCallbacks,
     dragModifier: Modifier,
 ) {
@@ -713,13 +744,26 @@ private fun FolderItemNode(
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
     var showNewFolderDialog by remember { mutableStateOf(false) }
+    val isDropTarget = dropTargetFolderId == item.id
+    val isPotentialDropTarget = draggedItem != null && canDropInto(draggedItem, item.id)
+
+    DisposableEffect(item.id) {
+        onDispose { onFolderHeaderBounds(item.id, null) }
+    }
 
     Column {
         Row(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .clickable { expanded = !expanded }
+                    .onGloballyPositioned { onFolderHeaderBounds(item.id, it.boundsInRoot()) }
+                    .background(
+                        when {
+                            isDropTarget -> MaterialTheme.colorScheme.primaryContainer
+                            isPotentialDropTarget -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+                            else -> Color.Transparent
+                        },
+                    ).clickable { expanded = !expanded }
                     .then(dragModifier)
                     .padding(start = (depth * 16).dp, top = 4.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -768,15 +812,6 @@ private fun FolderItemNode(
                         showMenu = false
                         showNewFolderDialog = true
                     },
-                    onRemoveFromFolder =
-                        if (depth > 1) {
-                            {
-                                showMenu = false
-                                onRemoveFromFolder(item)
-                            }
-                        } else {
-                            null
-                        },
                 )
             }
         }
@@ -791,7 +826,9 @@ private fun FolderItemNode(
                     onCreateFolder = onCreateFolder,
                     onRenameItem = onRenameItem,
                     onDeleteItem = onDeleteItem,
-                    onRemoveFromFolder = onRemoveFromFolder,
+                    draggedItem = draggedItem,
+                    dropTargetFolderId = dropTargetFolderId,
+                    onFolderHeaderBounds = onFolderHeaderBounds,
                     dragCallbacks = dragCallbacks,
                 )
             }
@@ -848,7 +885,6 @@ private fun ItemContextMenu(
     onRename: () -> Unit,
     onDelete: () -> Unit,
     onAddFolder: (() -> Unit)? = null,
-    onRemoveFromFolder: (() -> Unit)? = null,
 ) {
     DropdownMenu(
         expanded = expanded,
@@ -866,13 +902,6 @@ private fun ItemContextMenu(
             onClick = onRename,
             leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
         )
-        if (onRemoveFromFolder != null) {
-            DropdownMenuItem(
-                text = { Text("Remove from Folder") },
-                onClick = onRemoveFromFolder,
-                leadingIcon = { Icon(Icons.Default.FolderOpen, contentDescription = null) },
-            )
-        }
         HorizontalDivider()
         DropdownMenuItem(
             text = { Text("Delete", color = MaterialTheme.colorScheme.error) },

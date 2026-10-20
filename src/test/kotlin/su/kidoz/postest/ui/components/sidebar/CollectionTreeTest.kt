@@ -35,7 +35,7 @@ class CollectionTreeTest {
         collection: RequestCollection,
         selectedCollectionItemId: String? = null,
         onCreateFolder: (collectionId: String, parentFolderId: String?, name: String) -> Unit = { _, _, _ -> },
-        onRemoveFromFolder: (CollectionItem) -> Unit = {},
+        onMoveItem: (CollectionItem, String?) -> Unit = { _, _ -> },
         modifier: Modifier = Modifier,
     ) {
         setContent {
@@ -53,7 +53,7 @@ class CollectionTreeTest {
                     onDeleteCollection = {},
                     onRenameItem = { _, _ -> },
                     onDeleteItem = {},
-                    onRemoveFromFolder = onRemoveFromFolder,
+                    onMoveItem = onMoveItem,
                     modifier = modifier,
                 )
             }
@@ -64,6 +64,20 @@ class CollectionTreeTest {
         id: String,
         name: String = id,
     ) = CollectionItem.Request(id = id, name = name, request = HttpRequest(url = "https://api.example.com/$id"))
+
+    private fun ComposeUiTest.drag(
+        from: Offset,
+        to: Offset,
+    ) {
+        onRoot().performMouseInput {
+            moveTo(from)
+            press()
+            moveTo(from - Offset(0f, 20f))
+            moveTo(to)
+            moveTo(to)
+            release()
+        }
+    }
 
     @Test
     fun `selection uses the collection item id instead of the shared request id`() =
@@ -100,49 +114,91 @@ class CollectionTreeTest {
         }
 
     @Test
-    fun `request inside a folder offers removing it from the folder`() =
+    fun `request menu has no move action`() =
         runComposeUiTest {
             val item = request("item-1")
             val folder = CollectionItem.Folder(id = "folder-1", name = "Folder", items = listOf(item))
             setTree(RequestCollection(name = "Collection", items = listOf(folder)))
 
             onNodeWithContentDescription("Request menu").performClick()
-            onNodeWithText("Remove from Folder").assertExists()
-        }
-
-    @Test
-    fun `request at the collection root has no remove from folder action`() =
-        runComposeUiTest {
-            setTree(RequestCollection(name = "Collection", items = listOf(request("item-1"))))
-
-            onNodeWithContentDescription("Request menu").performClick()
             onNodeWithText("Remove from Folder").assertDoesNotExist()
         }
 
     @Test
-    fun `dragging a nested request onto the collection header removes it from the folder`() =
+    fun `dragging a nested request onto the collection header moves it to the root`() =
         runComposeUiTest {
             val item = request("item-1")
             val folder = CollectionItem.Folder(id = "folder-1", name = "Folder", items = listOf(item))
-            var removed: CollectionItem? = null
+            var moveCall: Pair<String, String?>? = null
             setTree(
                 collection = RequestCollection(name = "Collection", items = listOf(folder)),
-                onRemoveFromFolder = { removed = it },
+                onMoveItem = { movedItem, target -> moveCall = movedItem.id to target },
             )
 
             val itemBounds = onNodeWithTag("collection-item-${item.id}").fetchSemanticsNode().boundsInRoot
             val headerBounds = onNodeWithText("Collection").fetchSemanticsNode().boundsInRoot
 
-            onRoot().performMouseInput {
-                moveTo(itemBounds.center)
-                press()
-                moveTo(itemBounds.center - Offset(0f, 20f))
-                moveTo(headerBounds.center)
-                moveTo(headerBounds.center)
-                release()
-            }
+            drag(itemBounds.center, headerBounds.center)
 
-            assertEquals(item.id, removed?.id)
+            assertEquals(item.id to null, moveCall)
+        }
+
+    @Test
+    fun `dragging a request onto a folder moves it into the folder`() =
+        runComposeUiTest {
+            val item = request("item-1")
+            val folder = CollectionItem.Folder(id = "folder-1", name = "Folder")
+            var moveCall: Pair<String, String?>? = null
+            setTree(
+                collection = RequestCollection(name = "Collection", items = listOf(item, folder)),
+                onMoveItem = { movedItem, target -> moveCall = movedItem.id to target },
+            )
+
+            val itemBounds = onNodeWithTag("collection-item-${item.id}").fetchSemanticsNode().boundsInRoot
+            val folderBounds = onNodeWithText("Folder").fetchSemanticsNode().boundsInRoot
+
+            drag(itemBounds.center, folderBounds.center)
+
+            assertEquals(item.id to folder.id, moveCall)
+        }
+
+    @Test
+    fun `dragging a request between folders moves it into the target folder`() =
+        runComposeUiTest {
+            val item = request("item-1")
+            val source = CollectionItem.Folder(id = "folder-1", name = "Source", items = listOf(item))
+            val target = CollectionItem.Folder(id = "folder-2", name = "Target")
+            var moveCall: Pair<String, String?>? = null
+            setTree(
+                collection = RequestCollection(name = "Collection", items = listOf(source, target)),
+                onMoveItem = { movedItem, targetFolder -> moveCall = movedItem.id to targetFolder },
+            )
+
+            val itemBounds = onNodeWithTag("collection-item-${item.id}").fetchSemanticsNode().boundsInRoot
+            val targetBounds = onNodeWithText("Target").fetchSemanticsNode().boundsInRoot
+
+            drag(itemBounds.center, targetBounds.center)
+
+            assertEquals(item.id to target.id, moveCall)
+        }
+
+    @Test
+    fun `dragging a folder into its own subtree does not move it`() =
+        runComposeUiTest {
+            val child = CollectionItem.Folder(id = "child", name = "Child")
+            val parent = CollectionItem.Folder(id = "parent", name = "Parent", items = listOf(child))
+            var moveCall: Pair<String, String?>? = null
+            setTree(
+                collection = RequestCollection(name = "Collection", items = listOf(parent)),
+                onMoveItem = { movedItem, target -> moveCall = movedItem.id to target },
+            )
+
+            val parentBounds = onNodeWithText("Parent").fetchSemanticsNode().boundsInRoot
+            val childBounds = onNodeWithText("Child").fetchSemanticsNode().boundsInRoot
+
+            drag(parentBounds.center, childBounds.center)
+
+            assertNull(moveCall)
         }
 
     @Test
@@ -150,10 +206,10 @@ class CollectionTreeTest {
         runComposeUiTest {
             val item = request("nested")
             val folder = CollectionItem.Folder(id = "folder", name = "Folder", items = listOf(item))
-            var removed: CollectionItem? = null
+            var moveCall: Pair<String, String?>? = null
             setTree(
                 collection = RequestCollection(name = "Collection", items = (1..25).map { request("root-$it") } + folder),
-                onRemoveFromFolder = { removed = it },
+                onMoveItem = { movedItem, target -> moveCall = movedItem.id to target },
                 modifier = Modifier.size(360.dp, 260.dp),
             )
 
@@ -175,7 +231,7 @@ class CollectionTreeTest {
                 moveTo(headerBounds.center)
                 release()
             }
-            assertEquals(item.id, removed?.id)
+            assertEquals(item.id to null, moveCall)
         }
 
     @Test
@@ -183,10 +239,10 @@ class CollectionTreeTest {
         runComposeUiTest {
             val item = request("nested")
             val folder = CollectionItem.Folder(id = "folder", name = "Folder", items = listOf(item))
-            var removed: CollectionItem? = null
+            var moveCall: Pair<String, String?>? = null
             setTree(
                 collection = RequestCollection(name = "Collection", items = (1..25).map { request("root-$it") } + folder),
-                onRemoveFromFolder = { removed = it },
+                onMoveItem = { movedItem, target -> moveCall = movedItem.id to target },
                 modifier = Modifier.size(360.dp, 260.dp),
             )
             onNodeWithTag("collection-item-${item.id}").performScrollTo()
@@ -218,23 +274,6 @@ class CollectionTreeTest {
             val positionAfterRelease = scrollPosition()
             mainClock.advanceTimeBy(3000)
             assertEquals(positionAfterRelease, scrollPosition())
-            assertNull(removed)
-        }
-
-    @Test
-    fun `remove from folder reports the selected item`() =
-        runComposeUiTest {
-            val item = request("item-1")
-            val folder = CollectionItem.Folder(id = "folder-1", name = "Folder", items = listOf(item))
-            var removed: CollectionItem? = null
-            setTree(
-                collection = RequestCollection(name = "Collection", items = listOf(folder)),
-                onRemoveFromFolder = { removed = it },
-            )
-
-            onNodeWithContentDescription("Request menu").performClick()
-            onNodeWithText("Remove from Folder").performClick()
-
-            assertEquals(item.id, removed?.id)
+            assertNull(moveCall)
         }
 }

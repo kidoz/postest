@@ -35,7 +35,7 @@ fun Sidebar(
     onDeleteCollection: (RequestCollection) -> Unit,
     onRenameItem: (CollectionItem, String) -> Unit,
     onDeleteItem: (CollectionItem) -> Unit,
-    onRemoveFromFolder: (CollectionItem) -> Unit,
+    onMoveItem: (CollectionItem, String?) -> Unit,
     onClearHistory: () -> Unit,
     onEnvironmentSelect: (String?) -> Unit,
     onManageEnvironments: () -> Unit,
@@ -92,7 +92,7 @@ fun Sidebar(
                         onDeleteCollection = onDeleteCollection,
                         onRenameItem = onRenameItem,
                         onDeleteItem = onDeleteItem,
-                        onRemoveFromFolder = onRemoveFromFolder,
+                        onMoveItem = onMoveItem,
                     )
                 }
 

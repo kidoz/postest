@@ -47,9 +47,10 @@ class ManageCollectionsUseCase(
         parentFolderId: String? = null,
     ): CollectionItem.Folder = collectionRepository.addFolderToCollection(collectionId, name, description, parentFolderId)
 
-    suspend fun moveCollectionItemToCollectionRoot(itemId: String) {
-        collectionRepository.moveCollectionItemToCollectionRoot(itemId)
-    }
+    suspend fun moveCollectionItem(
+        itemId: String,
+        targetFolderId: String?,
+    ): Boolean = collectionRepository.moveCollectionItem(itemId, targetFolderId)
 
     suspend fun deleteCollectionItem(itemId: String) {
         collectionRepository.deleteCollectionItem(itemId)

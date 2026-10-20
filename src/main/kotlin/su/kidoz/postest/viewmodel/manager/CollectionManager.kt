@@ -134,12 +134,18 @@ class CollectionManager(
     }
 
     /**
-     * Moves a collection item (request or folder) to the collection root.
+     * Moves a collection item (request or folder) into a folder,
+     * or to the collection root when [targetFolderId] is null.
      */
-    fun moveCollectionItemToCollectionRoot(itemId: String) {
+    fun moveCollectionItem(
+        itemId: String,
+        targetFolderId: String?,
+    ) {
         scope.launch {
-            manageCollectionsUseCase.moveCollectionItemToCollectionRoot(itemId)
-            sideEffectEmitter.emit(AppSideEffect.ShowToast("Moved to collection root"))
+            if (manageCollectionsUseCase.moveCollectionItem(itemId, targetFolderId)) {
+                val message = if (targetFolderId == null) "Moved to collection root" else "Moved into folder"
+                sideEffectEmitter.emit(AppSideEffect.ShowToast(message))
+            }
         }
     }
 

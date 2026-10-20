@@ -150,8 +150,8 @@ fun MainScreen(
                         onDeleteItem = { item ->
                             viewModel.deleteCollectionItem(item.id)
                         },
-                        onRemoveFromFolder = { item ->
-                            viewModel.moveCollectionItemToCollectionRoot(item.id)
+                        onMoveItem = { item, targetFolderId ->
+                            viewModel.moveCollectionItem(item.id, targetFolderId)
                         },
                         onClearHistory = { viewModel.clearHistory() },
                         onEnvironmentSelect = { viewModel.selectEnvironment(it) },

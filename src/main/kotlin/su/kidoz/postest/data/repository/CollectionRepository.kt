@@ -296,39 +296,46 @@ class CollectionRepository(
         }
 
     /**
-     * Moves a collection item (request or folder) to the root of its collection.
-     * No-op when the item is already at the root.
+     * Moves a collection item (request or folder) into [targetFolderId],
+     * or to the collection root when [targetFolderId] is null.
+     * No-op when the item is already in the target location or the move would create a cycle.
      */
-    suspend fun moveCollectionItemToCollectionRoot(itemId: String) =
+    suspend fun moveCollectionItem(
+        itemId: String,
+        targetFolderId: String?,
+    ): Boolean =
         withContext(Dispatchers.IO) {
             val item =
                 database.postestQueries.selectCollectionItemById(itemId).executeAsOneOrNull()
-                    ?: return@withContext
-            if (item.parent_folder_id == null) return@withContext
+                    ?: return@withContext false
+            if (item.parent_folder_id == targetFolderId) return@withContext false
 
             val collectionId = item.collection_id
-            val rootPosition =
-                (
-                    database.postestQueries
-                        .selectRootItemsByCollectionId(collectionId)
-                        .executeAsList()
-                        .maxOfOrNull { it.position } ?: -1L
-                ) + 1L
+            if (targetFolderId != null) {
+                val target =
+                    database.postestQueries.selectCollectionItemById(targetFolderId).executeAsOneOrNull()
+                        ?: return@withContext false
+                if (target.collection_id != collectionId || target.type != "folder") return@withContext false
+                if (isSelfOrDescendant(targetFolderId, itemId)) return@withContext false
+            }
 
+            val targetPosition = nextSiblingPosition(collectionId, targetFolderId)
             val updatedAt = System.currentTimeMillis()
-            database.postestQueries.moveCollectionItemToCollectionRoot(rootPosition, itemId)
+            database.postestQueries.moveCollectionItem(targetFolderId, targetPosition, itemId)
             database.postestQueries.touchCollection(updatedAt, collectionId)
 
-            // Incremental update: move item to the end of the collection root
+            // Incremental update: move item to the end of the target folder (or collection root)
             updateCollections { currentList ->
                 currentList.map { c ->
                     if (c.id == collectionId) {
-                        c.copy(items = moveItemToRoot(c.items, itemId), updatedAt = updatedAt)
+                        c.copy(items = moveItemToParent(c.items, itemId, targetFolderId), updatedAt = updatedAt)
                     } else {
                         c
                     }
                 }
             }
+
+            true
         }
 
     /**
@@ -484,16 +491,54 @@ class CollectionRepository(
         }
 
     /**
-     * Moves a nested item to the end of the collection's root level.
-     * Returns the original list when the item is missing or already at the root.
+     * Moves an item to the end of its target folder, or to the collection root.
+     * Returns the original list when the item is missing.
      */
-    private fun moveItemToRoot(
+    private fun moveItemToParent(
         items: List<CollectionItem>,
         itemId: String,
+        targetFolderId: String?,
     ): List<CollectionItem> {
-        if (items.any { it.id == itemId }) return items
         val item = findItem(items, itemId) ?: return items
-        return removeItemFromCollection(items, itemId) + item
+        val withoutItem = removeItemFromCollection(items, itemId)
+        return addItemToCollection(withoutItem, item, targetFolderId)
+    }
+
+    /**
+     * Returns the position after the last child of [parentFolderId],
+     * or after the last root item when [parentFolderId] is null.
+     */
+    private fun nextSiblingPosition(
+        collectionId: String,
+        parentFolderId: String?,
+    ): Long {
+        val siblings =
+            if (parentFolderId == null) {
+                database.postestQueries.selectRootItemsByCollectionId(collectionId)
+            } else {
+                database.postestQueries.selectItemsByParentFolderId(parentFolderId)
+            }
+        return (siblings.executeAsList().maxOfOrNull { it.position } ?: -1L) + 1L
+    }
+
+    /**
+     * Returns true when [folderId] is [itemId] itself or one of its descendants.
+     * Used to reject moving a folder into its own subtree.
+     */
+    private fun isSelfOrDescendant(
+        folderId: String,
+        itemId: String,
+    ): Boolean {
+        var current: String? = folderId
+        while (current != null) {
+            if (current == itemId) return true
+            current =
+                database.postestQueries
+                    .selectCollectionItemById(current)
+                    .executeAsOneOrNull()
+                    ?.parent_folder_id
+        }
+        return false
     }
 
     /**

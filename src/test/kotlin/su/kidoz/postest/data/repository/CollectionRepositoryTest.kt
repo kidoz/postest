@@ -8,6 +8,7 @@ import su.kidoz.postest.domain.model.HttpRequest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -241,7 +242,7 @@ class CollectionRepositoryTest {
         }
 
     @Test
-    fun `moveCollectionItemToCollectionRoot should move request out of folder`() =
+    fun `moveCollectionItem should move request out of folder`() =
         runTest {
             val collection = repository.createCollection("API Tests")
             val folder = repository.addFolderToCollection(collection.id, "Folder")
@@ -255,7 +256,7 @@ class CollectionRepositoryTest {
             val before = repository.loadCollections().first().updatedAt
 
             Thread.sleep(10)
-            repository.moveCollectionItemToCollectionRoot(item.id)
+            assertTrue(repository.moveCollectionItem(item.id, null))
 
             val loaded = repository.loadCollections().first()
             assertEquals(2, loaded.items.size)
@@ -273,6 +274,41 @@ class CollectionRepositoryTest {
         }
 
     @Test
+    fun `moveCollectionItem should move request into folder`() =
+        runTest {
+            val collection = repository.createCollection("API Tests")
+            val folder = repository.addFolderToCollection(collection.id, "Folder")
+            val item = repository.addRequestToCollection(collection.id, HttpRequest(), "Test")
+            val before = repository.loadCollections().first().updatedAt
+
+            Thread.sleep(10)
+            assertTrue(repository.moveCollectionItem(item.id, folder.id))
+
+            val loaded = repository.loadCollections().first()
+            assertTrue(loaded.items.none { it.id == item.id })
+            val savedFolder = loaded.items.first { it.id == folder.id } as CollectionItem.Folder
+            assertEquals(listOf(item.id), savedFolder.items.map { it.id })
+            assertTrue(loaded.updatedAt > before)
+        }
+
+    @Test
+    fun `moveCollectionItem should move request between folders`() =
+        runTest {
+            val collection = repository.createCollection("API Tests")
+            val source = repository.addFolderToCollection(collection.id, "Source")
+            val target = repository.addFolderToCollection(collection.id, "Target")
+            val item = repository.addRequestToCollection(collection.id, HttpRequest(), "Test", source.id)
+
+            assertTrue(repository.moveCollectionItem(item.id, target.id))
+
+            val loaded = repository.loadCollections().first()
+            val savedSource = loaded.items.first { it.id == source.id } as CollectionItem.Folder
+            val savedTarget = loaded.items.first { it.id == target.id } as CollectionItem.Folder
+            assertTrue(savedSource.items.isEmpty())
+            assertEquals(listOf(item.id), savedTarget.items.map { it.id })
+        }
+
+    @Test
     fun `moving requests and folders to root preserves appended order after reload`() =
         runTest {
             val collection = repository.createCollection("API Tests")
@@ -282,8 +318,8 @@ class CollectionRepositoryTest {
             val child = repository.addRequestToCollection(collection.id, HttpRequest(), "Child", folder.id)
             val root = repository.addRequestToCollection(collection.id, HttpRequest(), "Root request")
 
-            repository.moveCollectionItemToCollectionRoot(request.id)
-            repository.moveCollectionItemToCollectionRoot(folder.id)
+            repository.moveCollectionItem(request.id, null)
+            repository.moveCollectionItem(folder.id, null)
 
             val expectedOrder = listOf(parent.id, root.id, request.id, folder.id)
             val beforeReload = repository.collections.first().single()
@@ -295,13 +331,13 @@ class CollectionRepositoryTest {
         }
 
     @Test
-    fun `moveCollectionItemToCollectionRoot should move nested folder`() =
+    fun `moveCollectionItem should move nested folder`() =
         runTest {
             val collection = repository.createCollection("API Tests")
             val parent = repository.addFolderToCollection(collection.id, "Parent")
             val child = repository.addFolderToCollection(collection.id, "Child", parentFolderId = parent.id)
 
-            repository.moveCollectionItemToCollectionRoot(child.id)
+            assertTrue(repository.moveCollectionItem(child.id, null))
 
             val loaded = repository.loadCollections().first()
             val savedParent = loaded.items.first { it.id == parent.id } as CollectionItem.Folder
@@ -310,14 +346,32 @@ class CollectionRepositoryTest {
         }
 
     @Test
-    fun `moveCollectionItemToCollectionRoot ignores items already at root`() =
+    fun `moveCollectionItem should reject moving a folder into its own subtree`() =
         runTest {
             val collection = repository.createCollection("API Tests")
-            val item = repository.addRequestToCollection(collection.id, HttpRequest(url = "https://api.example.com/test"), "Test")
+            val parent = repository.addFolderToCollection(collection.id, "Parent")
+            val child = repository.addFolderToCollection(collection.id, "Child", parentFolderId = parent.id)
+
+            assertFalse(repository.moveCollectionItem(parent.id, child.id))
+            assertFalse(repository.moveCollectionItem(parent.id, parent.id))
+
+            val loaded = repository.loadCollections().first()
+            val savedParent = loaded.items.first { it.id == parent.id } as CollectionItem.Folder
+            assertEquals(listOf(child.id), savedParent.items.map { it.id })
+        }
+
+    @Test
+    fun `moveCollectionItem should ignore items already in the target location`() =
+        runTest {
+            val collection = repository.createCollection("API Tests")
+            val folder = repository.addFolderToCollection(collection.id, "Folder")
+            val nested = repository.addRequestToCollection(collection.id, HttpRequest(), "Nested", folder.id)
+            val root = repository.addRequestToCollection(collection.id, HttpRequest(), "Root")
             val before = repository.loadCollections().first().updatedAt
 
             Thread.sleep(10)
-            repository.moveCollectionItemToCollectionRoot(item.id)
+            assertFalse(repository.moveCollectionItem(nested.id, folder.id))
+            assertFalse(repository.moveCollectionItem(root.id, null))
 
             assertEquals(before, repository.loadCollections().first().updatedAt)
         }

@@ -428,16 +428,16 @@ class MainViewModelTest {
             coEvery {
                 manageCollectionsUseCase.addFolderToCollection(any(), any(), any(), any())
             } returns CollectionItem.Folder(name = "Folder")
-            coEvery { manageCollectionsUseCase.moveCollectionItemToCollectionRoot(any()) } returns Unit
+            coEvery { manageCollectionsUseCase.moveCollectionItem(any(), any()) } returns true
 
             viewModel.addFolderToCollection("collection-1", "Folder", "folder-1")
-            viewModel.moveCollectionItemToCollectionRoot("item-1")
+            viewModel.moveCollectionItem("item-1", "folder-2")
             testDispatcher.scheduler.advanceUntilIdle()
 
             coVerify {
                 manageCollectionsUseCase.addFolderToCollection("collection-1", "Folder", "", "folder-1")
             }
-            coVerify { manageCollectionsUseCase.moveCollectionItemToCollectionRoot("item-1") }
+            coVerify { manageCollectionsUseCase.moveCollectionItem("item-1", "folder-2") }
         }
 
     @Test
