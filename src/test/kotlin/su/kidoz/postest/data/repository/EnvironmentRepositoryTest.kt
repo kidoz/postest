@@ -17,7 +17,7 @@ class EnvironmentRepositoryTest {
     @BeforeTest
     fun setup() {
         val database = TestDatabaseFactory.createInMemoryDatabase()
-        repository = EnvironmentRepository(database)
+        repository = EnvironmentRepository(database, TestDatabaseFactory.cipher())
     }
 
     @Test

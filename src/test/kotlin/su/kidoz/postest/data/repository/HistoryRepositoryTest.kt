@@ -20,7 +20,7 @@ class HistoryRepositoryTest {
     @BeforeTest
     fun setup() {
         val database = TestDatabaseFactory.createInMemoryDatabase()
-        repository = HistoryRepository(database)
+        repository = HistoryRepository(database, TestDatabaseFactory.cipher())
     }
 
     @Test

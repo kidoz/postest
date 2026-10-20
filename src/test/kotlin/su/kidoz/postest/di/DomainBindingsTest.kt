@@ -5,6 +5,7 @@ import org.koin.dsl.koinApplication
 import org.koin.dsl.module
 import su.kidoz.postest.data.db.PostestDatabase
 import su.kidoz.postest.data.repository.TestDatabaseFactory
+import su.kidoz.postest.data.security.RecordCipher
 import su.kidoz.postest.domain.port.*
 import su.kidoz.postest.domain.usecase.*
 import kotlin.test.Test
@@ -20,6 +21,7 @@ class DomainBindingsTest {
                     useCaseModule,
                     module {
                         single<PostestDatabase> { TestDatabaseFactory.createInMemoryDatabase() }
+                        single<RecordCipher> { TestDatabaseFactory.cipher() }
                     },
                 )
             }

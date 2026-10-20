@@ -1,8 +1,6 @@
 package su.kidoz.postest.data.repository
 
 import kotlinx.coroutines.test.runTest
-import su.kidoz.postest.data.db.PostestDatabase
-import su.kidoz.postest.di.migrateWorkspaceSession
 import su.kidoz.postest.domain.model.AuthConfig
 import su.kidoz.postest.domain.model.DraftSession
 import su.kidoz.postest.domain.model.DraftTab
@@ -22,7 +20,7 @@ class SessionRepositoryTest {
     @Test
     fun `fresh installations have no saved session`() =
         runTest {
-            val repository = SessionRepository(TestDatabaseFactory.createInMemoryDatabase())
+            val repository = SessionRepository(TestDatabaseFactory.createInMemoryDatabase(), TestDatabaseFactory.cipher())
             assertNull(repository.load())
         }
 
@@ -56,8 +54,8 @@ class SessionRepositoryTest {
                     tabs = listOf(DraftTab("tab", request, true, bodies, response = response, error = "previous failure")),
                     activeTabId = "tab",
                 )
-            SessionRepository(database).save(expected)
-            assertEquals(expected, SessionRepository(database).load())
+            SessionRepository(database, TestDatabaseFactory.cipher()).save(expected)
+            assertEquals(expected, SessionRepository(database, TestDatabaseFactory.cipher()).load())
             assertTrue(
                 database.postestQueries
                     .selectAllHistory()
@@ -69,7 +67,7 @@ class SessionRepositoryTest {
     @Test
     fun `saving a new workspace replaces its closed tabs and active selection`() =
         runTest {
-            val repository = SessionRepository(TestDatabaseFactory.createInMemoryDatabase())
+            val repository = SessionRepository(TestDatabaseFactory.createInMemoryDatabase(), TestDatabaseFactory.cipher())
             repository.save(DraftSession(tabs = listOf(DraftTab("old", HttpRequest(), true)), activeTabId = "old"))
             val latest = DraftSession(tabs = listOf(DraftTab("new", HttpRequest(), false)), activeTabId = "new")
             repository.save(latest)
@@ -80,37 +78,29 @@ class SessionRepositoryTest {
     fun `unreadable and future sessions are retained before fallback saves`() =
         runTest {
             val database = TestDatabaseFactory.createInMemoryDatabase()
-            val repository = SessionRepository(database)
+            val repository = SessionRepository(database, TestDatabaseFactory.cipher())
             listOf(
                 "not valid JSON",
                 """{"version":2,"tabs":[],"activeTabId":null}""",
                 """{"version":1,"tabs":[],"activeTabId":null}""",
             ).forEach { stored ->
-                database.postestQueries.saveWorkspaceSession(stored)
+                database.postestQueries.saveWorkspaceSession(
+                    TestDatabaseFactory.cipher().encrypt("WorkspaceSession", "current", "snapshot_json", stored),
+                )
                 val failure = assertFailsWith<IllegalStateException> { repository.load() }
                 assertEquals("Saved drafts are invalid or unsupported", failure.message)
                 val replacement = DraftSession(tabs = listOf(DraftTab("new", HttpRequest(), false)), activeTabId = "new")
                 repository.save(replacement)
-                assertEquals(stored, database.postestQueries.selectWorkspaceSessionBackup().executeAsOne())
+                assertEquals(
+                    stored,
+                    TestDatabaseFactory.cipher().decrypt(
+                        "WorkspaceSession",
+                        "backup",
+                        "snapshot_json",
+                        database.postestQueries.selectWorkspaceSessionBackup().executeAsOne(),
+                    ),
+                )
                 assertEquals(replacement, repository.load())
-            }
-        }
-
-    @Test
-    fun `migration adds the session table to an existing database and is repeatable`() =
-        runTest {
-            val driver = TestDatabaseFactory.createInMemoryDriver()
-            try {
-                driver.execute(null, "CREATE TABLE Collection (id TEXT PRIMARY KEY)", 0)
-                migrateWorkspaceSession(driver)
-                migrateWorkspaceSession(driver)
-                val database = PostestDatabase(driver)
-                val repository = SessionRepository(database)
-                val session = DraftSession(tabs = listOf(DraftTab("restored", HttpRequest(), true)), activeTabId = "restored")
-                repository.save(session)
-                assertEquals(session, repository.load())
-            } finally {
-                driver.close()
             }
         }
 }

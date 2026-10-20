@@ -95,6 +95,58 @@ class MainViewModelTest {
             }
     }
 
+    @Test
+    fun `inaccessible drafts block startup and closing never overwrites them`() =
+        runTest(testDispatcher) {
+            coEvery { manageSessionUseCase.load() } throws
+                su.kidoz.postest.domain.port
+                    .StorageAccessException("Unavailable")
+            val viewModel =
+                MainViewModel(
+                    executeRequestUseCase,
+                    manageCollectionsUseCase,
+                    manageEnvironmentsUseCase,
+                    manageHistoryUseCase,
+                    importCollectionUseCase,
+                    exportCollectionUseCase,
+                    manageSessionUseCase,
+                )
+            testScheduler.advanceUntilIdle()
+            assertFalse(viewModel.state.value.isInitialized)
+            assertNotNull(viewModel.state.value.initializationError)
+            assertTrue(viewModel.prepareToClose())
+            coVerify(exactly = 0) { manageSessionUseCase.save(any()) }
+            viewModel.cleanup()
+        }
+
+    @Test
+    fun `authentication failures from repository observations block autosave`() =
+        runTest(testDispatcher) {
+            every { manageCollectionsUseCase.collections } returns
+                kotlinx.coroutines.flow.flow {
+                    throw su.kidoz.postest.domain.port
+                        .StorageAccessException("Unavailable")
+                }
+            val viewModel =
+                MainViewModel(
+                    executeRequestUseCase,
+                    manageCollectionsUseCase,
+                    manageEnvironmentsUseCase,
+                    manageHistoryUseCase,
+                    importCollectionUseCase,
+                    exportCollectionUseCase,
+                    manageSessionUseCase,
+                )
+            testScheduler.advanceUntilIdle()
+            assertFalse(viewModel.state.value.isInitialized)
+            assertNotNull(viewModel.state.value.initializationError)
+            viewModel.updateRequest(HttpRequest(url = "https://example.test"))
+            testScheduler.advanceUntilIdle()
+            assertTrue(viewModel.prepareToClose())
+            coVerify(exactly = 0) { manageSessionUseCase.save(any()) }
+            viewModel.cleanup()
+        }
+
     @AfterTest
     fun tearDown() {
         Dispatchers.resetMain()

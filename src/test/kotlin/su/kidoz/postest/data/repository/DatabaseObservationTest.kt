@@ -18,8 +18,8 @@ class DatabaseObservationTest {
         runBlocking {
             withTimeout(5000) {
                 val database = TestDatabaseFactory.createInMemoryDatabase()
-                val reader = CollectionRepository(database)
-                val writer = CollectionRepository(database)
+                val reader = CollectionRepository(database, TestDatabaseFactory.cipher())
+                val writer = CollectionRepository(database, TestDatabaseFactory.cipher())
                 val changes = Channel<List<RequestCollection>>(Channel.UNLIMITED)
                 val collector = launch(start = CoroutineStart.UNDISPATCHED) { reader.collections.collect { changes.send(it) } }
                 try {
@@ -37,7 +37,10 @@ class DatabaseObservationTest {
                             .name,
                     )
                     // Deliberately do not touch Collection: observation must also depend on CollectionItem.
-                    database.postestQueries.renameCollectionItem("Renamed", request.id)
+                    database.postestQueries.renameCollectionItem(
+                        TestDatabaseFactory.cipher().encrypt("CollectionItem", request.id, "name", "Renamed"),
+                        request.id,
+                    )
                     assertEquals(
                         "Renamed",
                         changes
@@ -59,8 +62,8 @@ class DatabaseObservationTest {
         runBlocking {
             withTimeout(5000) {
                 val database = TestDatabaseFactory.createInMemoryDatabase()
-                val reader = EnvironmentRepository(database)
-                val writer = EnvironmentRepository(database)
+                val reader = EnvironmentRepository(database, TestDatabaseFactory.cipher())
+                val writer = EnvironmentRepository(database, TestDatabaseFactory.cipher())
                 val variable = Variable(key = "host", value = "one")
                 val first = Environment(name = "First", isActive = true, variables = listOf(variable))
                 writer.saveEnvironment(first)
@@ -69,7 +72,13 @@ class DatabaseObservationTest {
                 val collector = launch(start = CoroutineStart.UNDISPATCHED) { reader.snapshot.collect { changes.send(it) } }
                 try {
                     assertEquals(first.id, changes.receive().activeEnvironmentId)
-                    database.postestQueries.updateEnvironmentVariable(variable.key, "two", 0, 1, variable.id)
+                    database.postestQueries.updateEnvironmentVariable(
+                        TestDatabaseFactory.cipher().encrypt("EnvironmentVariable", variable.id, "key", variable.key),
+                        TestDatabaseFactory.cipher().encrypt("EnvironmentVariable", variable.id, "value", "two"),
+                        0,
+                        1,
+                        variable.id,
+                    )
                     assertEquals(
                         "two",
                         changes
@@ -97,8 +106,8 @@ class DatabaseObservationTest {
         runBlocking {
             withTimeout(5000) {
                 val database = TestDatabaseFactory.createInMemoryDatabase()
-                val reader = HistoryRepository(database)
-                val writer = HistoryRepository(database)
+                val reader = HistoryRepository(database, TestDatabaseFactory.cipher())
+                val writer = HistoryRepository(database, TestDatabaseFactory.cipher())
                 val changes = Channel<List<HistoryEntry>>(Channel.UNLIMITED)
                 val collector = launch(start = CoroutineStart.UNDISPATCHED) { reader.history.collect { changes.send(it) } }
                 try {

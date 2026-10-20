@@ -30,6 +30,7 @@ import su.kidoz.postest.domain.model.HttpRequest
 import su.kidoz.postest.domain.model.RequestBody
 import su.kidoz.postest.domain.model.RequestCollection
 import su.kidoz.postest.domain.model.containsItem
+import su.kidoz.postest.domain.port.StorageAccessException
 import su.kidoz.postest.domain.usecase.ExecuteRequestUseCase
 import su.kidoz.postest.domain.usecase.ExportCollectionUseCase
 import su.kidoz.postest.domain.usecase.ImportCollectionUseCase
@@ -120,6 +121,7 @@ class MainViewModel(
         val darkTheme: Boolean = false,
         val environmentDialog: Boolean = false,
         val collectionDialog: Boolean = false,
+        val startupError: String? = null,
     )
 
     private val presentation = MutableStateFlow(PresentationState())
@@ -153,6 +155,7 @@ class MainViewModel(
             .onStart { emit(Observed(initial)) }
             .catch { error ->
                 if (error is CancellationException) throw error
+                if (error is StorageAccessException) blockStorage()
                 val message = "$name could not be loaded"
                 this@MainViewModel.emit(AppSideEffect.ShowError(message))
                 emit(Observed(initial, loaded = true, error = message))
@@ -179,8 +182,8 @@ class MainViewModel(
                 isDarkTheme = ui.darkTheme,
                 showEnvironmentDialog = ui.environmentDialog,
                 showNewCollectionDialog = ui.collectionDialog,
-                isInitialized = tabs.isRestored && collections.loaded && environments.loaded && history.loaded,
-                initializationError = collections.error ?: environments.error ?: history.error,
+                isInitialized = ui.startupError == null && tabs.isRestored && collections.loaded && environments.loaded && history.loaded,
+                initializationError = ui.startupError ?: collections.error ?: environments.error ?: history.error,
                 isClosing = tabs.isClosing,
             )
         }.stateIn(
@@ -196,10 +199,21 @@ class MainViewModel(
     private val initialWorkspace = workspace.state.value.toDraftSession()
     private val startup: Job =
         viewModelScope.launch {
-            val session = sessionManager.load()
-            workspace.dispatch(WorkspaceCommand.Restore(session, initialWorkspace))
-            sessionManager.initialize()
+            try {
+                val session = sessionManager.load()
+                workspace.dispatch(WorkspaceCommand.Restore(session, initialWorkspace))
+                sessionManager.initialize()
+            } catch (_: StorageAccessException) {
+                blockStorage()
+            }
         }
+
+    private fun blockStorage() {
+        sessionManager.blockWrites()
+        presentation.update {
+            it.copy(startupError = "Protected storage cannot be read. Close Postest and retry unlocking it. Autosave is blocked.")
+        }
+    }
 
     init {
         viewModelScope.launch {
@@ -409,6 +423,7 @@ class MainViewModel(
             startup.join()
             workspace.dispatch(WorkspaceCommand.BeginClosing)
             requestExecutionManager.quiesce()
+            if (presentation.value.startupError != null) return@withLock true
             val saved = sessionManager.prepareToClose()
             if (!saved) workspace.dispatch(WorkspaceCommand.Resume)
             saved
@@ -418,5 +433,10 @@ class MainViewModel(
         logger.info { "MainViewModel cleanup: cancelling all coroutines" }
         requestExecutionManager.cleanup()
         viewModelScope.cancel()
+    }
+
+    suspend fun awaitCleanup() {
+        cleanup()
+        supervisorJob.join()
     }
 }

@@ -17,6 +17,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import su.kidoz.postest.domain.model.DraftSession
+import su.kidoz.postest.domain.port.StorageAccessException
 import su.kidoz.postest.domain.usecase.ManageSessionUseCase
 import su.kidoz.postest.viewmodel.AppSideEffect
 import su.kidoz.postest.viewmodel.SideEffectEmitter
@@ -36,6 +37,12 @@ class SessionManager(
     private var nextRevision = 0L
     private var committedRevision = -1L
     private var saveErrorShown = false
+    private var storageBlocked = false
+
+    fun blockWrites() {
+        storageBlocked = true
+        observer?.cancel()
+    }
 
     /** Loading is coordinated by MainViewModel, which applies one typed restore command. */
     suspend fun load(): DraftSession? =
@@ -43,6 +50,8 @@ class SessionManager(
             useCase.load()
         } catch (cancelled: CancellationException) {
             throw cancelled
+        } catch (inaccessible: StorageAccessException) {
+            throw inaccessible
         } catch (_: Exception) {
             effects.emit(AppSideEffect.ShowError("Saved drafts could not be restored. A new workspace was opened."))
             null
@@ -50,6 +59,7 @@ class SessionManager(
 
     @OptIn(FlowPreview::class)
     fun initialize() {
+        if (storageBlocked) return
         if (observer?.isActive == true) return
         val baseline = state.value.toDraftSession()
         observer =
@@ -75,6 +85,7 @@ class SessionManager(
     private suspend fun save(session: DraftSession): Boolean {
         val revision = nextRevision++
         return writer.withLock {
+            if (storageBlocked) return@withLock false
             if (revision <= committedRevision) return@withLock true
             // JDBC writes are synchronous: cancellation cannot safely interrupt a commit already in progress.
             withContext(NonCancellable) {

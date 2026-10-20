@@ -9,6 +9,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import su.kidoz.postest.data.db.PostestDatabase
+import su.kidoz.postest.data.security.RecordCipher
+import su.kidoz.postest.data.security.StorageException
 import su.kidoz.postest.domain.model.HistoryEntry
 import su.kidoz.postest.domain.model.HttpRequest
 import su.kidoz.postest.domain.model.HttpResponse
@@ -20,6 +22,7 @@ private val logger = KotlinLogging.logger {}
 
 class HistoryRepository(
     private val database: PostestDatabase,
+    private val cipher: RecordCipher,
 ) : HistoryRepositoryPort {
     private val json = Json { ignoreUnknownKeys = true }
     override val history: Flow<List<HistoryEntry>> =
@@ -40,14 +43,29 @@ class HistoryRepository(
                     runCatching {
                         HistoryEntry(
                             id = dbEntry.id,
-                            request = json.decodeFromString<HttpRequest>(dbEntry.request_json),
-                            response = dbEntry.response_json?.let { json.decodeFromString<HttpResponse>(it) },
-                            errorMessage = dbEntry.error_message,
+                            request =
+                                json.decodeFromString<HttpRequest>(
+                                    cipher.decrypt("HistoryEntry", dbEntry.id, "request_json", dbEntry.request_json),
+                                ),
+                            response =
+                                dbEntry.response_json?.let {
+                                    json.decodeFromString<HttpResponse>(cipher.decrypt("HistoryEntry", dbEntry.id, "response_json", it))
+                                },
+                            errorMessage =
+                                dbEntry.error_message?.let {
+                                    cipher.decrypt(
+                                        "HistoryEntry",
+                                        dbEntry.id,
+                                        "error_message",
+                                        it,
+                                    )
+                                },
                             duration = dbEntry.duration,
                             timestamp = dbEntry.timestamp,
                         )
                     }.getOrElse { error ->
-                        logger.warn { "Skipping corrupted history entry ${dbEntry.id}" }
+                        if (error is StorageException) throw error
+                        logger.warn { "Skipping corrupted history entry" }
                         null
                     }
                 }
@@ -67,9 +85,17 @@ class HistoryRepository(
             database.transaction {
                 database.postestQueries.insertHistoryEntry(
                     id = entryId,
-                    request_json = json.encodeToString(storedEntry.request),
-                    response_json = storedEntry.response?.let { json.encodeToString(it) },
-                    error_message = storedEntry.errorMessage,
+                    request_json = cipher.encrypt("HistoryEntry", entryId, "request_json", json.encodeToString(storedEntry.request)),
+                    response_json =
+                        storedEntry.response?.let {
+                            cipher.encrypt(
+                                "HistoryEntry",
+                                entryId,
+                                "response_json",
+                                json.encodeToString(it),
+                            )
+                        },
+                    error_message = storedEntry.errorMessage?.let { cipher.encrypt("HistoryEntry", entryId, "error_message", it) },
                     duration = storedEntry.duration,
                     timestamp = storedEntry.timestamp,
                 )

@@ -1,6 +1,11 @@
 package su.kidoz.postest
 
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -23,11 +28,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.jetbrains.skia.Image
 import org.koin.core.context.startKoin
+import su.kidoz.postest.data.security.StorageBootstrap
 import su.kidoz.postest.di.appModules
+import su.kidoz.postest.ui.screens.RecoveryKeyContent
+import su.kidoz.postest.ui.screens.StorageScreen
+import su.kidoz.postest.ui.theme.AppTheme
 import su.kidoz.postest.util.AppVersion
 import su.kidoz.postest.util.UpdateCheckResult
 import su.kidoz.postest.util.UpdateChecker
 import su.kidoz.postest.viewmodel.MainViewModel
+import su.kidoz.postest.viewmodel.StorageController
+import su.kidoz.postest.viewmodel.StorageState
 import java.awt.Desktop
 import java.awt.Taskbar
 import java.net.URI
@@ -87,14 +98,25 @@ fun main() {
         }.koin
 
     application {
-        val viewModel = remember { koin.get<MainViewModel>() }
         val scope = rememberCoroutineScope()
+        val bootstrap = remember { koin.get<StorageBootstrap>() }
+        val storageController = remember { StorageController(bootstrap, scope) }
+        val storageState by storageController.state.collectAsState()
+        LaunchedEffect(storageController) { storageController.unlock() }
+        val viewModel = if (storageState == StorageState.Ready) remember { koin.get<MainViewModel>() } else null
+        var recoveryKey by remember { mutableStateOf<String?>(null) }
         var isClosing by remember { mutableStateOf(false) }
         val closeApp: () -> Unit = {
             scope.launch {
                 if (!isClosing) {
                     isClosing = true
-                    if (viewModel.prepareToClose()) exitApplication() else isClosing = false
+                    if (viewModel?.prepareToClose() != false) {
+                        viewModel?.awaitCleanup()
+                        storageController.close()
+                        exitApplication()
+                    } else {
+                        isClosing = false
+                    }
                 }
             }
         }
@@ -138,6 +160,13 @@ fun main() {
             icon = iconPainter,
         ) {
             MenuBar {
+                Menu("Storage") {
+                    Item(
+                        "Show Recovery Key...",
+                        enabled = storageState == StorageState.Ready,
+                        onClick = { recoveryKey = bootstrap.current?.cipher?.recoveryKey() },
+                    )
+                }
                 Menu("Help") {
                     Item(
                         "Check for Updates...",
@@ -146,7 +175,30 @@ fun main() {
                     )
                 }
             }
-            App(viewModel)
+            if (viewModel != null) {
+                App(viewModel)
+            } else {
+                AppTheme {
+                    StorageScreen(
+                        storageState,
+                        onRetry = { storageController.unlock() },
+                        onRecover = { storageController.unlock(it) },
+                        onContinue = storageController::acknowledgeRecoveryKey,
+                    )
+                }
+            }
+            recoveryKey?.let { key ->
+                AppTheme {
+                    AlertDialog(
+                        onDismissRequest = { recoveryKey = null },
+                        title = { Text("Recovery key") },
+                        text = { RecoveryKeyContent(key) },
+                        confirmButton = {
+                            TextButton(onClick = { recoveryKey = null }) { Text("Done") }
+                        },
+                    )
+                }
+            }
         }
     }
 }

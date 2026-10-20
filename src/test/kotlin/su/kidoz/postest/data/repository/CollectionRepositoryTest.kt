@@ -21,7 +21,7 @@ class CollectionRepositoryTest {
     @BeforeTest
     fun setup() {
         val database = TestDatabaseFactory.createInMemoryDatabase()
-        repository = CollectionRepository(database)
+        repository = CollectionRepository(database, TestDatabaseFactory.cipher())
     }
 
     @Test

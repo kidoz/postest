@@ -177,9 +177,8 @@ SELECT snapshot_json FROM WorkspaceSession WHERE id = 'current';
 saveWorkspaceSession:
 INSERT OR REPLACE INTO WorkspaceSession(id, snapshot_json) VALUES ('current', ?);
 
-backupWorkspaceSession:
-INSERT OR REPLACE INTO WorkspaceSession(id, snapshot_json)
-SELECT 'backup', snapshot_json FROM WorkspaceSession WHERE id = 'current';
+saveWorkspaceSessionBackup:
+INSERT OR REPLACE INTO WorkspaceSession(id, snapshot_json) VALUES ('backup', ?);
 
 selectWorkspaceSessionBackup:
 SELECT snapshot_json FROM WorkspaceSession WHERE id = 'backup';

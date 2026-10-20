@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import su.kidoz.postest.data.db.PostestDatabase
+import su.kidoz.postest.data.security.RecordCipher
 import su.kidoz.postest.domain.model.Environment
 import su.kidoz.postest.domain.model.EnvironmentSnapshot
 import su.kidoz.postest.domain.model.Variable
@@ -15,6 +16,7 @@ import su.kidoz.postest.domain.port.EnvironmentRepository as EnvironmentReposito
 
 class EnvironmentRepository(
     private val database: PostestDatabase,
+    private val cipher: RecordCipher,
 ) : EnvironmentRepositoryPort {
     private val queries = database.postestQueries
     override val snapshot: Flow<EnvironmentSnapshot> = queries.observeEnvironmentChanges().asFlow().map { readSnapshot() }
@@ -26,23 +28,26 @@ class EnvironmentRepository(
             database.transactionWithResult {
                 val variables = queries.selectAllEnvironmentVariables().executeAsList().groupBy { it.environment_id }
                 EnvironmentSnapshot(
-                    queries.selectAllEnvironments().executeAsList().map { row ->
-                        Environment(
-                            id = row.id,
-                            name = row.name,
-                            isActive = row.is_active == 1L,
-                            variables =
-                                variables[row.id].orEmpty().map { variable ->
-                                    Variable(
-                                        id = variable.id,
-                                        key = variable.key,
-                                        value = variable.value_,
-                                        type = if (variable.is_secret == 1L) VariableType.SECRET else VariableType.DEFAULT,
-                                        enabled = variable.enabled == 1L,
-                                    )
-                                },
-                        )
-                    },
+                    queries
+                        .selectAllEnvironments()
+                        .executeAsList()
+                        .map { row ->
+                            Environment(
+                                id = row.id,
+                                name = cipher.decrypt("Environment", row.id, "name", row.name),
+                                isActive = row.is_active == 1L,
+                                variables =
+                                    variables[row.id].orEmpty().map { variable ->
+                                        Variable(
+                                            id = variable.id,
+                                            key = cipher.decrypt("EnvironmentVariable", variable.id, "key", variable.key),
+                                            value = cipher.decrypt("EnvironmentVariable", variable.id, "value", variable.value_),
+                                            type = if (variable.is_secret == 1L) VariableType.SECRET else VariableType.DEFAULT,
+                                            enabled = variable.enabled == 1L,
+                                        )
+                                    },
+                            )
+                        }.sortedBy { it.name },
                 )
             }
         }
@@ -63,7 +68,7 @@ class EnvironmentRepository(
                 if (environment.isActive) queries.deactivateAllEnvironments()
                 queries.insertEnvironment(
                     id = environment.id,
-                    name = environment.name,
+                    name = cipher.encrypt("Environment", environment.id, "name", environment.name),
                     is_active = if (environment.isActive) 1 else 0,
                     created_at = System.currentTimeMillis(),
                     updated_at = System.currentTimeMillis(),
@@ -79,7 +84,7 @@ class EnvironmentRepository(
                 if (environment.isActive) queries.deactivateAllEnvironments()
                 queries.updateEnvironment(
                     id = environment.id,
-                    name = environment.name,
+                    name = cipher.encrypt("Environment", environment.id, "name", environment.name),
                     is_active = if (environment.isActive) 1 else 0,
                     updated_at = System.currentTimeMillis(),
                 )
@@ -112,11 +117,12 @@ class EnvironmentRepository(
 
     private fun insertVariables(environment: Environment) {
         environment.variables.forEach { variable ->
+            val id = variable.id.ifBlank { UUID.randomUUID().toString() }
             queries.insertEnvironmentVariable(
-                id = variable.id.ifBlank { UUID.randomUUID().toString() },
+                id = id,
                 environment_id = environment.id,
-                key = variable.key,
-                value_ = variable.value,
+                key = cipher.encrypt("EnvironmentVariable", id, "key", variable.key),
+                value_ = cipher.encrypt("EnvironmentVariable", id, "value", variable.value),
                 is_secret = if (variable.isSecret) 1 else 0,
                 enabled = if (variable.enabled) 1 else 0,
             )

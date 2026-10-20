@@ -96,7 +96,7 @@ compose.desktop {
 
         mainClass = "su.kidoz.postest.MainKt"
 
-        jvmArgs += listOf("-Xdock:name=Postest")
+        jvmArgs += listOf("-Xdock:name=Postest", "--enable-native-access=ALL-UNNAMED")
 
         buildTypes.release.proguard {
             configurationFiles.from(project.file("compose-desktop.pro"))
@@ -148,6 +148,7 @@ compose.desktop {
 
 tasks.test {
     useJUnitPlatform()
+    jvmArgs("--enable-native-access=ALL-UNNAMED")
 }
 
 ktlint {
