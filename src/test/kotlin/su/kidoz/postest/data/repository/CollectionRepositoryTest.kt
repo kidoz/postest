@@ -5,6 +5,9 @@ import kotlinx.coroutines.test.runTest
 import su.kidoz.postest.domain.model.CollectionItem
 import su.kidoz.postest.domain.model.HttpMethod
 import su.kidoz.postest.domain.model.HttpRequest
+import su.kidoz.postest.domain.model.RequestCollection
+import su.kidoz.postest.domain.model.Variable
+import su.kidoz.postest.domain.model.VariableType
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -429,5 +432,41 @@ class CollectionRepositoryTest {
             val items = collections.first().items
 
             assertEquals(3, items.size)
+        }
+
+    @Test
+    fun `collection variables survive reload`() =
+        runTest {
+            val variables =
+                listOf(
+                    Variable(key = "baseUrl", value = "https://api.example.com"),
+                    Variable(key = "apiKey", value = "secret", type = VariableType.SECRET),
+                )
+            repository.importCollection(RequestCollection(id = "vars", name = "API", variables = variables))
+
+            val loaded = repository.loadCollections().single()
+            assertEquals(variables, loaded.variables)
+            assertEquals(
+                variables,
+                repository.collections
+                    .first()
+                    .single()
+                    .variables,
+            )
+        }
+
+    @Test
+    fun `importCollection rolls back when an item insert fails`() =
+        runTest {
+            val duplicateItems =
+                listOf(
+                    CollectionItem.Request(id = "same-id", name = "One", request = HttpRequest()),
+                    CollectionItem.Request(id = "same-id", name = "Two", request = HttpRequest()),
+                )
+            val collection = RequestCollection(id = "atomic", name = "API", items = duplicateItems)
+
+            assertTrue(runCatching { repository.importCollection(collection) }.isFailure)
+            assertTrue(repository.loadCollections().isEmpty())
+            assertTrue(repository.collections.first().isEmpty())
         }
 }

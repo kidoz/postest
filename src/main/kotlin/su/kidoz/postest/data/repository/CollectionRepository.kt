@@ -14,6 +14,7 @@ import su.kidoz.postest.domain.model.AuthConfig
 import su.kidoz.postest.domain.model.CollectionItem
 import su.kidoz.postest.domain.model.HttpRequest
 import su.kidoz.postest.domain.model.RequestCollection
+import su.kidoz.postest.domain.model.Variable
 import java.util.UUID
 
 private val logger = KotlinLogging.logger {}
@@ -22,6 +23,9 @@ class CollectionRepository(
     private val database: PostestDatabase,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
+
+    private fun encodeVariables(variables: List<Variable>): String? = variables.takeIf { it.isNotEmpty() }?.let { json.encodeToString(it) }
+
     private val _collections = MutableStateFlow<List<RequestCollection>>(emptyList())
     val collections: Flow<List<RequestCollection>> = _collections.asStateFlow()
 
@@ -46,6 +50,7 @@ class CollectionRepository(
                         name = dbCollection.name,
                         description = dbCollection.description,
                         items = items,
+                        variables = dbCollection.variables_json?.let { json.decodeFromString<List<Variable>>(it) } ?: emptyList(),
                         auth = dbCollection.auth_json?.let { json.decodeFromString<AuthConfig>(it) },
                         createdAt = dbCollection.created_at,
                         updatedAt = dbCollection.updated_at,
@@ -120,6 +125,7 @@ class CollectionRepository(
                 name = collection.name,
                 description = collection.description,
                 auth_json = collection.auth?.let { json.encodeToString(it) },
+                variables_json = encodeVariables(collection.variables),
                 created_at = collection.createdAt,
                 updated_at = collection.updatedAt,
             )
@@ -143,6 +149,7 @@ class CollectionRepository(
                 name = collection.name,
                 description = collection.description,
                 auth_json = collection.auth?.let { json.encodeToString(it) },
+                variables_json = encodeVariables(collection.variables),
                 updated_at = System.currentTimeMillis(),
             )
 
@@ -397,18 +404,19 @@ class CollectionRepository(
         withContext(Dispatchers.IO) {
             logger.info { "Importing collection '${collection.name}' with ${collection.items.size} top-level items" }
 
-            // Insert the collection
-            database.postestQueries.insertCollection(
-                id = collection.id,
-                name = collection.name,
-                description = collection.description,
-                auth_json = collection.auth?.let { json.encodeToString(it) },
-                created_at = collection.createdAt,
-                updated_at = collection.updatedAt,
-            )
-
-            // Insert all items recursively
-            insertItemsRecursively(collection.id, collection.items, parentFolderId = null)
+            // Persist the collection and all children atomically
+            database.transaction {
+                database.postestQueries.insertCollection(
+                    id = collection.id,
+                    name = collection.name,
+                    description = collection.description,
+                    auth_json = collection.auth?.let { json.encodeToString(it) },
+                    variables_json = encodeVariables(collection.variables),
+                    created_at = collection.createdAt,
+                    updated_at = collection.updatedAt,
+                )
+                insertItemsRecursively(collection.id, collection.items, parentFolderId = null)
+            }
 
             // Incremental update: append imported collection
             updateCollections { currentList ->

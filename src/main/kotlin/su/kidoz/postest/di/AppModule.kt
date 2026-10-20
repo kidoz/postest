@@ -1,5 +1,6 @@
 package su.kidoz.postest.di
 
+import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -39,25 +40,49 @@ private fun createDatabaseDriver(): SqlDriver {
     dbPath.parentFile?.mkdirs()
     logger.info { "Initializing database at: ${dbPath.absolutePath}" }
     val driver = JdbcSqliteDriver("jdbc:sqlite:${dbPath.absolutePath}")
-    try {
+    if (hasTable(driver, "Collection")) {
+        logger.debug { "Database schema already exists" }
+        runMigrations(driver)
+    } else {
         PostestDatabase.Schema.create(driver)
         logger.info { "Database schema created successfully" }
-    } catch (e: Exception) {
-        // SQLite throws "table already exists" when schema is already created
-        val message = e.message ?: ""
-        if (message.contains("already exists", ignoreCase = true)) {
-            logger.debug { "Database schema already exists" }
-            // Run migrations for existing databases
-            runMigrations(driver)
-        } else {
-            // Re-throw unexpected errors (permission, disk space, corruption, etc.)
-            logger.error(e) { "Failed to initialize database: ${e.message}" }
-            throw e
-        }
     }
     configureDriver(driver)
     return driver
 }
+
+private fun hasTable(
+    driver: SqlDriver,
+    table: String,
+): Boolean =
+    driver
+        .executeQuery(
+            identifier = null,
+            sql = "SELECT 1 FROM sqlite_master WHERE type='table' AND name='$table'",
+            mapper = { cursor -> QueryResult.Value(cursor.next().value) },
+            parameters = 0,
+        ).value
+
+private fun hasColumn(
+    driver: SqlDriver,
+    table: String,
+    column: String,
+): Boolean =
+    driver
+        .executeQuery(
+            identifier = null,
+            sql = "PRAGMA table_info($table)",
+            mapper = { cursor ->
+                var found = false
+                while (cursor.next().value) {
+                    if (cursor.getString(1) == column) {
+                        found = true
+                    }
+                }
+                QueryResult.Value(found)
+            },
+            parameters = 0,
+        ).value
 
 private fun configureDriver(driver: SqlDriver) {
     // Enable FK enforcement so ON DELETE CASCADE clauses in the schema actually work
@@ -80,16 +105,15 @@ private fun configureDriver(driver: SqlDriver) {
 
 private fun runMigrations(driver: SqlDriver) {
     migrateWorkspaceSession(driver)
-    // Migration 1: Add error_message column to HistoryEntry table
-    try {
+
+    if (!hasColumn(driver, "HistoryEntry", "error_message")) {
         driver.execute(null, "ALTER TABLE HistoryEntry ADD COLUMN error_message TEXT", 0)
         logger.info { "Migration: Added error_message column to HistoryEntry table" }
-    } catch (e: Exception) {
-        // Column already exists or other error - ignore if it's a duplicate column error
-        val message = e.message ?: ""
-        if (!message.contains("duplicate column", ignoreCase = true)) {
-            logger.debug { "Migration error_message column: ${e.message}" }
-        }
+    }
+
+    if (!hasColumn(driver, "Collection", "variables_json")) {
+        driver.execute(null, "ALTER TABLE Collection ADD COLUMN variables_json TEXT", 0)
+        logger.info { "Migration: Added variables_json column to Collection table" }
     }
 }
 

@@ -16,6 +16,7 @@ import su.kidoz.postest.domain.model.HistoryEntry
 import su.kidoz.postest.domain.model.HttpRequest
 import su.kidoz.postest.domain.model.RequestBody
 import su.kidoz.postest.domain.model.RequestCollection
+import su.kidoz.postest.domain.model.containsItem
 import su.kidoz.postest.domain.usecase.ExecuteRequestUseCase
 import su.kidoz.postest.domain.usecase.ExportCollectionUseCase
 import su.kidoz.postest.domain.usecase.ImportCollectionUseCase
@@ -237,7 +238,15 @@ class MainViewModel(
 
     fun sendRequest() {
         val activeTab = tabManager.getActiveTab() ?: return
-        requestExecutionManager.sendRequest(activeTab.id, activeTab.request)
+        val collectionVariables =
+            activeTab.collectionItemId
+                ?.let { itemId ->
+                    _state.value.collections
+                        .firstOrNull { it.containsItem(itemId) }
+                        ?.variables
+                }
+                ?: emptyList()
+        requestExecutionManager.sendRequest(activeTab.id, activeTab.request, collectionVariables)
     }
 
     fun cancelRequest() {

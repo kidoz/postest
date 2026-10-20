@@ -15,6 +15,15 @@ data class RequestCollection(
     val updatedAt: Long = System.currentTimeMillis(),
 )
 
+/** Returns true when [itemId] is this collection or one of its descendants. */
+fun RequestCollection.containsItem(itemId: String): Boolean = items.any { it.containsItem(itemId) }
+
+private fun CollectionItem.containsItem(itemId: String): Boolean =
+    when (this) {
+        is CollectionItem.Request -> id == itemId
+        is CollectionItem.Folder -> id == itemId || items.any { it.containsItem(itemId) }
+    }
+
 @Serializable
 sealed class CollectionItem {
     abstract val id: String

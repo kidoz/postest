@@ -4,6 +4,7 @@ CREATE TABLE Collection (
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     auth_json TEXT,
+    variables_json TEXT,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 );
@@ -60,11 +61,11 @@ selectCollectionById:
 SELECT * FROM Collection WHERE id = ?;
 
 insertCollection:
-INSERT INTO Collection(id, name, description, auth_json, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?);
+INSERT INTO Collection(id, name, description, auth_json, variables_json, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?);
 
 updateCollection:
-UPDATE Collection SET name = ?, description = ?, auth_json = ?, updated_at = ? WHERE id = ?;
+UPDATE Collection SET name = ?, description = ?, auth_json = ?, variables_json = ?, updated_at = ? WHERE id = ?;
 
 renameCollection:
 UPDATE Collection SET name = ?, updated_at = ? WHERE id = ?;
