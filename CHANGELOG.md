@@ -50,7 +50,7 @@ All notable changes to Postest are documented in this file. Releases are listed 
 #### Requests & Responses
 - Client certificate (mTLS) authentication.
 - Request cancellation.
-- Multipart form-data and binary file uploads.
+- Multipart form-data fields and binary body file uploads.
 - Detailed timing breakdown (DNS, connect, TLS, first byte, download).
 - Request history limit and database indexes for faster startup.
 - Fix Postman export when the target file has no parent directory.
@@ -123,7 +123,7 @@ All notable changes to Postest are documented in this file. Releases are listed 
 - **JSON** - Syntax highlighted editor with formatting
 - **XML** - Syntax highlighted editor
 - **Form URL Encoded** - Key-value pair editor
-- **Multipart Form Data** - Support for text fields and file uploads
+- **Multipart Form Data** - Support for text fields
 - **Raw** - Plain text with custom content type
 - **Binary** - File upload support
 - **GraphQL** - Query and variables editor
