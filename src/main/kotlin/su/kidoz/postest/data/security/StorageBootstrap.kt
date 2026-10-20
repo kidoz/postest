@@ -1,6 +1,7 @@
 package su.kidoz.postest.data.security
 
 import java.nio.channels.FileChannel
+import java.nio.channels.FileLock
 import java.nio.channels.OverlappingFileLockException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -19,21 +20,15 @@ class StorageBootstrap(
         private set
 
     @Synchronized
-    fun open(recoveryKey: String? = null): ProtectedStorage {
+    fun open(
+        recoveryKey: String? = null,
+        initialMode: StorageMode? = null,
+    ): ProtectedStorage {
         current?.let { return it }
         Files.createDirectories(directory)
         val channel = FileChannel.open(directory.resolve("postest.lock"), StandardOpenOption.CREATE, StandardOpenOption.WRITE)
-        val lock =
-            try {
-                channel.tryLock() ?: throw StorageException(StorageProblem.ALREADY_OPEN)
-            } catch (_: OverlappingFileLockException) {
-                channel.close()
-                throw StorageException(StorageProblem.ALREADY_OPEN)
-            } catch (error: Exception) {
-                channel.close()
-                throw error
-            }
-        var cipher: RecordCipher? = null
+        val lock = acquireLock(channel)
+        var codec: RecordCodec? = null
         var opened = false
         try {
             val path = directory.resolve(DATABASE_NAME)
@@ -44,6 +39,8 @@ class StorageBootstrap(
                 previous = previousDatabase()
                 // A stage is never used for live writes. Complete stages are recoverable after a crash.
                 if (!Files.exists(stage) || !isComplete(stage)) {
+                    val freshWorkspace = previous == null && !Files.exists(legacy)
+                    if (freshWorkspace && initialMode == null) throw StorageSetupRequiredException()
                     removeStage(stage)
                     if (previous != null) {
                         validateExisting(previous, recoveryKey).close()
@@ -54,6 +51,8 @@ class StorageBootstrap(
                                 it.execute()
                             }
                         }
+                    } else if (freshWorkspace && initialMode == StorageMode.UNENCRYPTED) {
+                        createPlainStage(stage)
                     } else {
                         createStage(stage, legacy)
                     }
@@ -65,33 +64,36 @@ class StorageBootstrap(
                 if (previous != null || Files.exists(legacy)) backupStage(stage)
                 promote(stage, path)
             }
-            cipher = validateExisting(path, recoveryKey)
+            codec = validateExisting(path, recoveryKey)
             previous?.let {
                 removeStage(it)
                 syncDirectory()
             }
-            retireLegacy(path, legacy)
+            if (codec.mode == StorageMode.ENCRYPTED) retireLegacy(path, legacy)
             val acknowledged =
-                connect(path).use { connection ->
-                    connection.createStatement().use { statement ->
-                        statement.executeQuery("SELECT recovery_acknowledged FROM ProtectedStorage").use {
-                            it.next()
-                            it.getInt(1) != 0
+                codec.mode == StorageMode.UNENCRYPTED ||
+                    connect(path).use { connection ->
+                        connection.createStatement().use { statement ->
+                            statement.executeQuery("SELECT recovery_acknowledged FROM ProtectedStorage").use {
+                                it.next()
+                                it.getInt(1) != 0
+                            }
                         }
                     }
-                }
-            return ProtectedStorage(createProtectedDriver(path), cipher, path, lock, channel, !acknowledged).also {
+            return ProtectedStorage(createProtectedDriver(path), codec, path, lock, channel, !acknowledged).also {
                 current = it
                 opened =
                     true
             }
+        } catch (setup: StorageSetupRequiredException) {
+            throw setup
         } catch (error: StorageException) {
             throw error
         } catch (_: Exception) {
             throw StorageException(StorageProblem.MIGRATION_FAILED)
         } finally {
             if (!opened) {
-                cipher?.close()
+                codec?.close()
                 lock.release()
                 channel.close()
             }
@@ -102,6 +104,64 @@ class StorageBootstrap(
     fun close() {
         current?.close()
         current = null
+    }
+
+    private fun acquireLock(channel: FileChannel): FileLock =
+        try {
+            channel.tryLock() ?: throw StorageException(StorageProblem.ALREADY_OPEN)
+        } catch (_: OverlappingFileLockException) {
+            channel.close()
+            throw StorageException(StorageProblem.ALREADY_OPEN)
+        } catch (error: Exception) {
+            channel.close()
+            throw error
+        }
+
+    private fun createPlainStage(stage: Path) {
+        createProtectedSchema(stage)
+        connect(stage).use { connection ->
+            connection.autoCommit = false
+            connection.createStatement().use { statement ->
+                statement.execute(
+                    "CREATE TABLE PlainStorage (id INTEGER PRIMARY KEY CHECK(id = 1), version INTEGER NOT NULL, complete INTEGER NOT NULL)",
+                )
+                statement.executeUpdate("INSERT INTO PlainStorage VALUES (1, 1, 1)")
+            }
+            connection.commit()
+        }
+    }
+
+    private fun storageMode(connection: Connection): StorageMode {
+        val tables =
+            connection.createStatement().use { query ->
+                query
+                    .executeQuery(
+                        "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('ProtectedStorage', 'PlainStorage')",
+                    ).use {
+                        buildList { while (it.next()) add(it.getString(1)) }
+                    }
+            }
+        return when (tables.singleOrNull()) {
+            "ProtectedStorage" -> StorageMode.ENCRYPTED
+            "PlainStorage" -> StorageMode.UNENCRYPTED
+            else -> throw StorageException(StorageProblem.INVALID_DATA)
+        }
+    }
+
+    private fun validatePlainStorage(connection: Connection): RecordCodec {
+        connection.createStatement().use { query ->
+            query.executeQuery("SELECT version, complete FROM PlainStorage WHERE id = 1").use {
+                if (!it.next() || it.getInt(1) != 1 || it.getInt(2) != 1) throw StorageException(StorageProblem.INVALID_DATA)
+            }
+        }
+        val codec = PlaintextRecordCodec()
+        try {
+            validateContent(connection, codec)
+            return codec
+        } catch (_: Exception) {
+            codec.close()
+            throw StorageException(StorageProblem.INVALID_DATA)
+        }
     }
 
     private fun previousDatabase(): Path? {
@@ -218,7 +278,7 @@ class StorageBootstrap(
                                 insert.setObject(
                                     index + 1,
                                     if (column in protectedColumns && value != null) {
-                                        cipher.encrypt(table, id, column, rows.getString(index + 1))
+                                        cipher.encode(table, id, column, rows.getString(index + 1))
                                     } else {
                                         value
                                     },
@@ -267,7 +327,7 @@ class StorageBootstrap(
         }
         connection.prepareStatement("INSERT INTO ProtectedStorage VALUES (1, 1, ?, ?, 0, ?, 1)").use {
             it.setString(1, vaultId)
-            it.setString(2, cipher.encrypt("ProtectedStorage", "1", "verifier", VERIFIER))
+            it.setString(2, cipher.encode("ProtectedStorage", "1", "verifier", VERIFIER))
             it.setInt(3, if (legacy) 1 else 0)
             it.executeUpdate()
         }
@@ -276,8 +336,11 @@ class StorageBootstrap(
     private fun validateExisting(
         path: Path,
         recoveryKey: String?,
-    ): RecordCipher =
+    ): RecordCodec =
         connect(path).use { connection ->
+            if (storageMode(connection) == StorageMode.UNENCRYPTED) {
+                return@use validatePlainStorage(connection)
+            }
             val vaultId =
                 connection.createStatement().use { query ->
                     query.executeQuery("SELECT version, vault_id, complete FROM ProtectedStorage WHERE id = 1").use {
@@ -307,7 +370,7 @@ class StorageBootstrap(
                             it.getString(1)
                         }
                     }
-                if (cipher.decrypt("ProtectedStorage", "1", "verifier", verifier) != VERIFIER) {
+                if (cipher.decode("ProtectedStorage", "1", "verifier", verifier) != VERIFIER) {
                     throw StorageException(StorageProblem.INVALID_DATA)
                 }
                 validateContent(connection, cipher)
@@ -335,14 +398,14 @@ class StorageBootstrap(
 
     private fun validateContent(
         connection: Connection,
-        cipher: RecordCipher,
+        cipher: RecordCodec,
     ) {
         contentColumns.forEach { (table, columns) ->
             connection.createStatement().use { statement ->
                 statement.executeQuery("SELECT * FROM \"$table\"").use { rows ->
                     while (rows.next()) {
                         columns.forEach { column ->
-                            rows.getString(column)?.let { cipher.decrypt(table, rows.getString("id"), column, it) }
+                            rows.getString(column)?.let { cipher.decode(table, rows.getString("id"), column, it) }
                         }
                     }
                 }
@@ -400,7 +463,8 @@ class StorageBootstrap(
         try {
             connect(path).use { connection ->
                 connection.createStatement().use { query ->
-                    query.executeQuery("SELECT complete FROM ProtectedStorage WHERE id = 1").use { it.next() && it.getInt(1) == 1 }
+                    val metadata = if (storageMode(connection) == StorageMode.ENCRYPTED) "ProtectedStorage" else "PlainStorage"
+                    query.executeQuery("SELECT complete FROM $metadata WHERE id = 1").use { it.next() && it.getInt(1) == 1 }
                 }
             }
         } catch (_: Exception) {

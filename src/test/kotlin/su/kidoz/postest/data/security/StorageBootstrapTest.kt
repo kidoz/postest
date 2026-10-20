@@ -52,13 +52,13 @@ class StorageBootstrapTest {
                 val keys = MemoryKeyStore()
                 val marker = "EXAMPLE-plaintext-marker-3e6bd4"
                 val bootstrap = StorageBootstrap(directory, keys)
-                val storage = bootstrap.open()
-                val recovery = storage.cipher.recoveryKey()
+                val storage = bootstrap.open(initialMode = StorageMode.ENCRYPTED)
+                val recovery = checkNotNull(storage.codec.recoveryKey())
                 val database = PostestDatabase(storage.driver)
-                val collections = CollectionRepository(database, storage.cipher)
-                val environments = EnvironmentRepository(database, storage.cipher)
-                val history = HistoryRepository(database, storage.cipher)
-                val sessions = SessionRepository(database, storage.cipher)
+                val collections = CollectionRepository(database, storage.codec)
+                val environments = EnvironmentRepository(database, storage.codec)
+                val history = HistoryRepository(database, storage.codec)
+                val sessions = SessionRepository(database, storage.codec)
                 val request = HttpRequest(name = marker, url = "https://example.test/$marker", auth = AuthConfig.Bearer(marker))
                 val collection = collections.createCollection(marker, marker)
                 collections.addRequestToCollection(collection.id, request, marker, null)
@@ -92,12 +92,12 @@ class StorageBootstrapTest {
                 sessions.save(session)
                 val invalid = "{invalid-$marker"
                 database.postestQueries.saveWorkspaceSession(
-                    storage.cipher.encrypt("WorkspaceSession", "current", "snapshot_json", invalid),
+                    storage.codec.encode("WorkspaceSession", "current", "snapshot_json", invalid),
                 )
                 assertFailsWith<IllegalStateException> { sessions.load() }
                 assertEquals(
                     invalid,
-                    storage.cipher.decrypt(
+                    storage.codec.decode(
                         "WorkspaceSession",
                         "backup",
                         "snapshot_json",
@@ -115,13 +115,13 @@ class StorageBootstrapTest {
                         assertFalse(bytes.contains(recovery), "Recovery key found in ${path.fileName}")
                     }
                 }
-                StorageBootstrap(directory, keys).open().use { reopened ->
+                StorageBootstrap(directory, keys).open(initialMode = StorageMode.ENCRYPTED).use { reopened ->
                     assertFalse(reopened.needsRecoveryAcknowledgement)
                     val restored = PostestDatabase(reopened.driver)
-                    assertEquals(marker, CollectionRepository(restored, reopened.cipher).loadCollections().single().name)
-                    assertEquals(environment, EnvironmentRepository(restored, reopened.cipher).getActiveEnvironment())
-                    assertEquals(entry, HistoryRepository(restored, reopened.cipher).loadHistory().single())
-                    assertEquals(session, SessionRepository(restored, reopened.cipher).load())
+                    assertEquals(marker, CollectionRepository(restored, reopened.codec).loadCollections().single().name)
+                    assertEquals(environment, EnvironmentRepository(restored, reopened.codec).getActiveEnvironment())
+                    assertEquals(entry, HistoryRepository(restored, reopened.codec).loadHistory().single())
+                    assertEquals(session, SessionRepository(restored, reopened.codec).load())
                 }
             }
         }
@@ -142,13 +142,13 @@ class StorageBootstrapTest {
                 driver.execute(null, "ALTER TABLE HistoryEntry DROP COLUMN error_message", 0)
             }
             val keys = MemoryKeyStore()
-            StorageBootstrap(directory, keys).open().use { storage ->
+            StorageBootstrap(directory, keys).open(initialMode = StorageMode.ENCRYPTED).use { storage ->
                 val queries = PostestDatabase(storage.driver).postestQueries
                 val row = queries.selectAllCollections().executeAsOne()
-                assertEquals(marker, storage.cipher.decrypt("Collection", row.id, "auth_json", row.auth_json!!))
+                assertEquals(marker, storage.codec.decode("Collection", row.id, "auth_json", row.auth_json!!))
                 assertEquals(
                     marker,
-                    storage.cipher.decrypt(
+                    storage.codec.decode(
                         "WorkspaceSession",
                         "backup",
                         "snapshot_json",
@@ -159,7 +159,7 @@ class StorageBootstrapTest {
             }
             val bytes = Files.readAllBytes(directory.resolve(StorageBootstrap.DATABASE_NAME)).toString(Charsets.ISO_8859_1)
             assertFalse(bytes.contains(marker))
-            StorageBootstrap(directory, keys).open().close()
+            StorageBootstrap(directory, keys).open(initialMode = StorageMode.ENCRYPTED).close()
             assertEquals(1, keys.writes)
         }
     }
@@ -168,18 +168,23 @@ class StorageBootstrapTest {
     fun `missing and locked keys never create a replacement or modify saved ciphertext`() {
         withDirectory { directory ->
             val keys = MemoryKeyStore()
-            StorageBootstrap(directory, keys).open().close()
+            StorageBootstrap(directory, keys).open(initialMode = StorageMode.ENCRYPTED).close()
             val path = directory.resolve(StorageBootstrap.DATABASE_NAME)
             val saved = Files.readAllBytes(path)
             keys.keys.clear()
-            assertEquals(StorageProblem.KEY_MISSING, assertFailsWith<StorageException> { StorageBootstrap(directory, keys).open() }.problem)
+            assertEquals(
+                StorageProblem.KEY_MISSING,
+                assertFailsWith<StorageException> {
+                    StorageBootstrap(directory, keys).open(initialMode = StorageMode.ENCRYPTED)
+                }.problem,
+            )
             assertEquals(1, keys.writes)
             assertTrue(saved.contentEquals(Files.readAllBytes(path)))
             val locked = mockk<NativeKeyStore>()
             every { locked.read(any()) } throws StorageException(StorageProblem.KEY_STORE_UNAVAILABLE)
             assertEquals(
                 StorageProblem.KEY_STORE_UNAVAILABLE,
-                assertFailsWith<StorageException> { StorageBootstrap(directory, locked).open() }.problem,
+                assertFailsWith<StorageException> { StorageBootstrap(directory, locked).open(initialMode = StorageMode.ENCRYPTED) }.problem,
             )
             verify(exactly = 0) { locked.write(any(), any()) }
             assertTrue(saved.contentEquals(Files.readAllBytes(path)))
@@ -190,12 +195,12 @@ class StorageBootstrapTest {
     fun `recovery replaces a lost or wrong stored key only after authentication`() {
         withDirectory { directory ->
             val keys = MemoryKeyStore()
-            val recovery = StorageBootstrap(directory, keys).open().use { it.cipher.recoveryKey() }
+            val recovery = StorageBootstrap(directory, keys).open(initialMode = StorageMode.ENCRYPTED).use { it.codec.recoveryKey() }
             val id = keys.keys.keys.single()
             keys.keys[id] = RecordCipher.newKey()
             assertEquals(
                 StorageProblem.INVALID_DATA,
-                assertFailsWith<StorageException> { StorageBootstrap(directory, keys).open() }.problem,
+                assertFailsWith<StorageException> { StorageBootstrap(directory, keys).open(initialMode = StorageMode.ENCRYPTED) }.problem,
             )
             val writes = keys.writes
             assertFailsWith<StorageException> {
@@ -203,7 +208,7 @@ class StorageBootstrapTest {
             }
             assertEquals(writes, keys.writes)
             StorageBootstrap(directory, keys).open(recovery).close()
-            StorageBootstrap(directory, keys).open().close()
+            StorageBootstrap(directory, keys).open(initialMode = StorageMode.ENCRYPTED).close()
             assertEquals(writes + 1, keys.writes)
         }
     }
@@ -212,13 +217,18 @@ class StorageBootstrapTest {
     fun `exclusive lock prevents a second application from opening storage`() {
         withDirectory { directory ->
             val keys = MemoryKeyStore()
-            StorageBootstrap(directory, keys).open().use {
+            StorageBootstrap(directory, keys).open(initialMode = StorageMode.ENCRYPTED).use {
                 assertEquals(
                     StorageProblem.ALREADY_OPEN,
-                    assertFailsWith<StorageException> { StorageBootstrap(directory, keys).open() }.problem,
+                    assertFailsWith<StorageException> {
+                        StorageBootstrap(
+                            directory,
+                            keys,
+                        ).open(initialMode = StorageMode.ENCRYPTED)
+                    }.problem,
                 )
             }
-            StorageBootstrap(directory, keys).open().close()
+            StorageBootstrap(directory, keys).open(initialMode = StorageMode.ENCRYPTED).close()
         }
     }
 
@@ -226,13 +236,13 @@ class StorageBootstrapTest {
     fun `completed stage is recovered without generating another key`() {
         withDirectory { directory ->
             val keys = MemoryKeyStore()
-            StorageBootstrap(directory, keys).open().close()
+            StorageBootstrap(directory, keys).open(initialMode = StorageMode.ENCRYPTED).close()
             Files.move(
                 directory.resolve(StorageBootstrap.DATABASE_NAME),
                 directory.resolve("${StorageBootstrap.DATABASE_NAME}.pending"),
                 StandardCopyOption.ATOMIC_MOVE,
             )
-            StorageBootstrap(directory, keys).open().close()
+            StorageBootstrap(directory, keys).open(initialMode = StorageMode.ENCRYPTED).close()
             assertEquals(1, keys.writes)
             assertTrue(Files.exists(directory.resolve(StorageBootstrap.DATABASE_NAME)))
         }
@@ -248,7 +258,7 @@ class StorageBootstrapTest {
             }
             val original = Files.readAllBytes(legacy)
             val keys = MemoryKeyStore()
-            assertFailsWith<StorageException> { StorageBootstrap(directory, keys).open() }
+            assertFailsWith<StorageException> { StorageBootstrap(directory, keys).open(initialMode = StorageMode.ENCRYPTED) }
             assertTrue(original.contentEquals(Files.readAllBytes(legacy)))
             assertFalse(Files.exists(directory.resolve(StorageBootstrap.DATABASE_NAME)))
         }
@@ -258,13 +268,13 @@ class StorageBootstrapTest {
     fun `startup rejects substituted records instead of starting autosave`() {
         withDirectory { directory ->
             val keys = MemoryKeyStore()
-            StorageBootstrap(directory, keys).open().use { storage ->
+            StorageBootstrap(directory, keys).open(initialMode = StorageMode.ENCRYPTED).use { storage ->
                 val queries = PostestDatabase(storage.driver).postestQueries
-                queries.saveWorkspaceSession(storage.cipher.encrypt("WorkspaceSession", "backup", "snapshot_json", "EXAMPLE"))
+                queries.saveWorkspaceSession(storage.codec.encode("WorkspaceSession", "backup", "snapshot_json", "EXAMPLE"))
             }
             assertEquals(
                 StorageProblem.INVALID_DATA,
-                assertFailsWith<StorageException> { StorageBootstrap(directory, keys).open() }.problem,
+                assertFailsWith<StorageException> { StorageBootstrap(directory, keys).open(initialMode = StorageMode.ENCRYPTED) }.problem,
             )
         }
     }
@@ -278,7 +288,7 @@ class StorageBootstrapTest {
                 driver.execute(null, "CREATE TABLE FutureData (id TEXT, payload TEXT)", 0)
             }
             val original = Files.readAllBytes(legacy)
-            assertFailsWith<StorageException> { StorageBootstrap(directory, MemoryKeyStore()).open() }
+            assertFailsWith<StorageException> { StorageBootstrap(directory, MemoryKeyStore()).open(initialMode = StorageMode.ENCRYPTED) }
             assertTrue(original.contentEquals(Files.readAllBytes(legacy)))
         }
     }
@@ -286,7 +296,7 @@ class StorageBootstrapTest {
     @Test
     fun `new text columns and tables require an explicit encryption coverage decision`() {
         withDirectory { directory ->
-            StorageBootstrap(directory, MemoryKeyStore()).open().use {
+            StorageBootstrap(directory, MemoryKeyStore()).open(initialMode = StorageMode.ENCRYPTED).use {
                 DriverManager.getConnection("jdbc:sqlite:${directory.resolve(StorageBootstrap.DATABASE_NAME)}").use { connection ->
                     val structural = setOf("id", "collection_id", "parent_folder_id", "type", "environment_id")
                     connection.createStatement().use { query ->
@@ -321,8 +331,8 @@ class StorageBootstrapTest {
                 PostestDatabase.Schema.create(driver)
                 driver.execute(null, "DROP TABLE WorkspaceSession", 0)
             }
-            StorageBootstrap(directory, MemoryKeyStore()).open().use { storage ->
-                val repository = SessionRepository(PostestDatabase(storage.driver), storage.cipher)
+            StorageBootstrap(directory, MemoryKeyStore()).open(initialMode = StorageMode.ENCRYPTED).use { storage ->
+                val repository = SessionRepository(PostestDatabase(storage.driver), storage.codec)
                 kotlin.test.assertNull(repository.load())
                 val session = DraftSession(tabs = listOf(DraftTab("tab", HttpRequest(), true)), activeTabId = "tab")
                 repository.save(session)
@@ -337,18 +347,18 @@ class StorageBootstrapTest {
             val keys = MemoryKeyStore()
             val marker = "EXAMPLE-previous-version"
             val recovery =
-                StorageBootstrap(directory, keys).open().use { storage ->
+                StorageBootstrap(directory, keys).open(initialMode = StorageMode.ENCRYPTED).use { storage ->
                     PostestDatabase(
                         storage.driver,
-                    ).postestQueries.saveWorkspaceSession(storage.cipher.encrypt("WorkspaceSession", "current", "snapshot_json", marker))
-                    storage.cipher.recoveryKey()
+                    ).postestQueries.saveWorkspaceSession(storage.codec.encode("WorkspaceSession", "current", "snapshot_json", marker))
+                    storage.codec.recoveryKey()
                 }
             val previous = directory.resolve("postest-protected.db")
             Files.move(directory.resolve(StorageBootstrap.DATABASE_NAME), previous)
-            StorageBootstrap(directory, keys).open().use { storage ->
-                assertEquals(recovery, storage.cipher.recoveryKey())
+            StorageBootstrap(directory, keys).open(initialMode = StorageMode.ENCRYPTED).use { storage ->
+                assertEquals(recovery, storage.codec.recoveryKey())
                 val value = PostestDatabase(storage.driver).postestQueries.selectWorkspaceSession().executeAsOne()
-                assertEquals(marker, storage.cipher.decrypt("WorkspaceSession", "current", "snapshot_json", value))
+                assertEquals(marker, storage.codec.decode("WorkspaceSession", "current", "snapshot_json", value))
             }
             assertEquals(1, keys.writes)
             assertFalse(Files.exists(previous))
@@ -362,11 +372,11 @@ class StorageBootstrapTest {
     fun `older completed staging filename is recovered and existing backups are preserved`() {
         withDirectory { directory ->
             val keys = MemoryKeyStore()
-            StorageBootstrap(directory, keys).open().close()
+            StorageBootstrap(directory, keys).open(initialMode = StorageMode.ENCRYPTED).close()
             Files.move(directory.resolve(StorageBootstrap.DATABASE_NAME), directory.resolve("postest-protected.pending.db"))
             val backup = directory.resolve("posttest.db.bak")
             Files.writeString(backup, "EXAMPLE-existing-backup")
-            StorageBootstrap(directory, keys).open().close()
+            StorageBootstrap(directory, keys).open(initialMode = StorageMode.ENCRYPTED).close()
             assertEquals("EXAMPLE-existing-backup", Files.readString(backup))
             assertTrue(Files.exists(directory.resolve("posttest.db.bak.1")))
             assertFalse(Files.exists(directory.resolve("postest-protected.pending.db")))
@@ -378,11 +388,16 @@ class StorageBootstrapTest {
     fun `missing key for previous filename preserves original and never creates a fresh database`() {
         withDirectory { directory ->
             val keys = MemoryKeyStore()
-            StorageBootstrap(directory, keys).open().close()
+            StorageBootstrap(directory, keys).open(initialMode = StorageMode.ENCRYPTED).close()
             val previous = directory.resolve("postest-protected.db")
             Files.move(directory.resolve(StorageBootstrap.DATABASE_NAME), previous)
             keys.keys.clear()
-            assertEquals(StorageProblem.KEY_MISSING, assertFailsWith<StorageException> { StorageBootstrap(directory, keys).open() }.problem)
+            assertEquals(
+                StorageProblem.KEY_MISSING,
+                assertFailsWith<StorageException> {
+                    StorageBootstrap(directory, keys).open(initialMode = StorageMode.ENCRYPTED)
+                }.problem,
+            )
             assertTrue(Files.exists(previous))
             assertFalse(Files.exists(directory.resolve(StorageBootstrap.DATABASE_NAME)))
             assertEquals(1, keys.writes)
@@ -394,13 +409,13 @@ class StorageBootstrapTest {
         withDirectory { directory ->
             val keys = MemoryKeyStore()
             JdbcSqliteDriver("jdbc:sqlite:${directory.resolve("postest.db")}").use { PostestDatabase.Schema.create(it) }
-            StorageBootstrap(directory, keys).open().close()
+            StorageBootstrap(directory, keys).open(initialMode = StorageMode.ENCRYPTED).close()
             val restore = directory.resolve("restore")
             Files.createDirectories(restore)
             Files.copy(directory.resolve("posttest.db.bak"), restore.resolve(StorageBootstrap.DATABASE_NAME))
             val unrelated = restore.resolve("postest.db")
             Files.writeString(unrelated, "EXAMPLE-unrelated-legacy")
-            StorageBootstrap(restore, keys).open().close()
+            StorageBootstrap(restore, keys).open(initialMode = StorageMode.ENCRYPTED).close()
             assertEquals("EXAMPLE-unrelated-legacy", Files.readString(unrelated))
         }
     }

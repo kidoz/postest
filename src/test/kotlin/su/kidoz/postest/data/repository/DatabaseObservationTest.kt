@@ -38,7 +38,7 @@ class DatabaseObservationTest {
                     )
                     // Deliberately do not touch Collection: observation must also depend on CollectionItem.
                     database.postestQueries.renameCollectionItem(
-                        TestDatabaseFactory.cipher().encrypt("CollectionItem", request.id, "name", "Renamed"),
+                        TestDatabaseFactory.cipher().encode("CollectionItem", request.id, "name", "Renamed"),
                         request.id,
                     )
                     assertEquals(
@@ -73,8 +73,8 @@ class DatabaseObservationTest {
                 try {
                     assertEquals(first.id, changes.receive().activeEnvironmentId)
                     database.postestQueries.updateEnvironmentVariable(
-                        TestDatabaseFactory.cipher().encrypt("EnvironmentVariable", variable.id, "key", variable.key),
-                        TestDatabaseFactory.cipher().encrypt("EnvironmentVariable", variable.id, "value", "two"),
+                        TestDatabaseFactory.cipher().encode("EnvironmentVariable", variable.id, "key", variable.key),
+                        TestDatabaseFactory.cipher().encode("EnvironmentVariable", variable.id, "value", "two"),
                         0,
                         1,
                         variable.id,

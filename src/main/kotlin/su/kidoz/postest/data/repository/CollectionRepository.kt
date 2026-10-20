@@ -8,7 +8,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import su.kidoz.postest.data.db.PostestDatabase
-import su.kidoz.postest.data.security.RecordCipher
+import su.kidoz.postest.data.security.RecordCodec
 import su.kidoz.postest.domain.model.AuthConfig
 import su.kidoz.postest.domain.model.CollectionItem
 import su.kidoz.postest.domain.model.HttpRequest
@@ -20,7 +20,7 @@ import su.kidoz.postest.domain.port.CollectionRepository as CollectionRepository
 /** SQLite owns saved collections; observers always rebuild from committed rows. */
 class CollectionRepository(
     private val database: PostestDatabase,
-    private val cipher: RecordCipher,
+    private val codec: RecordCodec,
 ) : CollectionRepositoryPort {
     private val queries = database.postestQueries
     private val json = Json { ignoreUnknownKeys = true }
@@ -40,11 +40,11 @@ class CollectionRepository(
                             "request" -> {
                                 CollectionItem.Request(
                                     id = row.id,
-                                    name = cipher.decrypt("CollectionItem", row.id, "name", row.name),
+                                    name = codec.decode("CollectionItem", row.id, "name", row.name),
                                     request =
                                         row.request_json?.let {
                                             json.decodeFromString<HttpRequest>(
-                                                cipher.decrypt("CollectionItem", row.id, "request_json", it),
+                                                codec.decode("CollectionItem", row.id, "request_json", it),
                                             )
                                         }
                                             ?: HttpRequest(),
@@ -54,8 +54,8 @@ class CollectionRepository(
                             "folder" -> {
                                 CollectionItem.Folder(
                                     id = row.id,
-                                    name = cipher.decrypt("CollectionItem", row.id, "name", row.name),
-                                    description = cipher.decrypt("CollectionItem", row.id, "description", row.description),
+                                    name = codec.decode("CollectionItem", row.id, "name", row.name),
+                                    description = codec.decode("CollectionItem", row.id, "description", row.description),
                                     items = items(collectionId, row.id),
                                 )
                             }
@@ -68,18 +68,18 @@ class CollectionRepository(
                 queries.selectAllCollections().executeAsList().map { row ->
                     RequestCollection(
                         id = row.id,
-                        name = cipher.decrypt("Collection", row.id, "name", row.name),
-                        description = cipher.decrypt("Collection", row.id, "description", row.description),
+                        name = codec.decode("Collection", row.id, "name", row.name),
+                        description = codec.decode("Collection", row.id, "description", row.description),
                         items = items(row.id, null),
                         variables =
                             row.variables_json
                                 ?.let {
-                                    json.decodeFromString<List<Variable>>(cipher.decrypt("Collection", row.id, "variables_json", it))
+                                    json.decodeFromString<List<Variable>>(codec.decode("Collection", row.id, "variables_json", it))
                                 }.orEmpty(),
                         auth =
                             row.auth_json?.let {
                                 json.decodeFromString<AuthConfig>(
-                                    cipher.decrypt("Collection", row.id, "auth_json", it),
+                                    codec.decode("Collection", row.id, "auth_json", it),
                                 )
                             },
                         createdAt = row.created_at,
@@ -98,13 +98,13 @@ class CollectionRepository(
         withContext(Dispatchers.IO) {
             queries.updateCollection(
                 id = collection.id,
-                name = cipher.encrypt("Collection", collection.id, "name", collection.name),
-                description = cipher.encrypt("Collection", collection.id, "description", collection.description),
-                auth_json = collection.auth?.let { cipher.encrypt("Collection", collection.id, "auth_json", json.encodeToString(it)) },
+                name = codec.encode("Collection", collection.id, "name", collection.name),
+                description = codec.encode("Collection", collection.id, "description", collection.description),
+                auth_json = collection.auth?.let { codec.encode("Collection", collection.id, "auth_json", json.encodeToString(it)) },
                 variables_json =
                     encodeVariables(
                         collection.variables,
-                    )?.let { cipher.encrypt("Collection", collection.id, "variables_json", it) },
+                    )?.let { codec.encode("Collection", collection.id, "variables_json", it) },
                 updated_at = System.currentTimeMillis(),
             )
         }
@@ -125,7 +125,7 @@ class CollectionRepository(
         newName: String,
     ) {
         withContext(Dispatchers.IO) {
-            queries.renameCollection(cipher.encrypt("Collection", collectionId, "name", newName), System.currentTimeMillis(), collectionId)
+            queries.renameCollection(codec.encode("Collection", collectionId, "name", newName), System.currentTimeMillis(), collectionId)
         }
     }
 
@@ -207,7 +207,7 @@ class CollectionRepository(
         withContext(Dispatchers.IO) {
             database.transaction {
                 val item = queries.selectCollectionItemById(itemId).executeAsOneOrNull()
-                queries.renameCollectionItem(cipher.encrypt("CollectionItem", itemId, "name", newName), itemId)
+                queries.renameCollectionItem(codec.encode("CollectionItem", itemId, "name", newName), itemId)
                 item?.let { queries.touchCollection(System.currentTimeMillis(), it.collection_id) }
             }
         }
@@ -218,13 +218,13 @@ class CollectionRepository(
             database.transaction {
                 queries.insertCollection(
                     id = collection.id,
-                    name = cipher.encrypt("Collection", collection.id, "name", collection.name),
-                    description = cipher.encrypt("Collection", collection.id, "description", collection.description),
-                    auth_json = collection.auth?.let { cipher.encrypt("Collection", collection.id, "auth_json", json.encodeToString(it)) },
+                    name = codec.encode("Collection", collection.id, "name", collection.name),
+                    description = codec.encode("Collection", collection.id, "description", collection.description),
+                    auth_json = collection.auth?.let { codec.encode("Collection", collection.id, "auth_json", json.encodeToString(it)) },
                     variables_json =
                         encodeVariables(
                             collection.variables,
-                        )?.let { cipher.encrypt("Collection", collection.id, "variables_json", it) },
+                        )?.let { codec.encode("Collection", collection.id, "variables_json", it) },
                     created_at = collection.createdAt,
                     updated_at = collection.updatedAt,
                 )
@@ -247,9 +247,9 @@ class CollectionRepository(
                 collection_id = collectionId,
                 parent_folder_id = parentId,
                 type = if (item is CollectionItem.Folder) "folder" else "request",
-                name = cipher.encrypt("CollectionItem", item.id, "name", item.name),
+                name = codec.encode("CollectionItem", item.id, "name", item.name),
                 description =
-                    cipher.encrypt(
+                    codec.encode(
                         "CollectionItem",
                         item.id,
                         "description",
@@ -257,7 +257,7 @@ class CollectionRepository(
                     ),
                 request_json =
                     (item as? CollectionItem.Request)?.request?.let {
-                        cipher.encrypt("CollectionItem", item.id, "request_json", json.encodeToString(it))
+                        codec.encode("CollectionItem", item.id, "request_json", json.encodeToString(it))
                     },
                 position = firstPosition + index,
             )

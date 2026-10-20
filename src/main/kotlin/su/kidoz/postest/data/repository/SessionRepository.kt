@@ -5,14 +5,14 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import su.kidoz.postest.data.db.PostestDatabase
-import su.kidoz.postest.data.security.RecordCipher
+import su.kidoz.postest.data.security.RecordCodec
 import su.kidoz.postest.domain.model.DraftSession
 import su.kidoz.postest.domain.port.DraftSessionStore
 
 /** Stores one atomic workspace snapshot in the application's existing database. */
 class SessionRepository(
     private val database: PostestDatabase,
-    private val cipher: RecordCipher,
+    private val codec: RecordCodec,
 ) : DraftSessionStore {
     private val json =
         Json {
@@ -23,7 +23,7 @@ class SessionRepository(
     override suspend fun load(): DraftSession? =
         withContext(Dispatchers.IO) {
             val stored = database.postestQueries.selectWorkspaceSession().executeAsOneOrNull() ?: return@withContext null
-            val plaintext = cipher.decrypt("WorkspaceSession", "current", "snapshot_json", stored)
+            val plaintext = codec.decode("WorkspaceSession", "current", "snapshot_json", stored)
             try {
                 val session = json.decodeFromString<DraftSession>(plaintext)
                 require(session.version == 1) { "Unsupported draft session version" }
@@ -33,7 +33,7 @@ class SessionRepository(
                 }
                 session
             } catch (_: Exception) {
-                database.postestQueries.saveWorkspaceSessionBackup(cipher.encrypt("WorkspaceSession", "backup", "snapshot_json", plaintext))
+                database.postestQueries.saveWorkspaceSessionBackup(codec.encode("WorkspaceSession", "backup", "snapshot_json", plaintext))
                 // Serialization errors can contain request content; expose only a fixed message.
                 error("Saved drafts are invalid or unsupported")
             }
@@ -42,7 +42,7 @@ class SessionRepository(
     override suspend fun save(session: DraftSession) {
         withContext(Dispatchers.IO) {
             database.postestQueries.saveWorkspaceSession(
-                cipher.encrypt("WorkspaceSession", "current", "snapshot_json", json.encodeToString(session)),
+                codec.encode("WorkspaceSession", "current", "snapshot_json", json.encodeToString(session)),
             )
         }
     }

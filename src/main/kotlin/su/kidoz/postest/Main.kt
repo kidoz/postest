@@ -29,6 +29,7 @@ import kotlinx.coroutines.launch
 import org.jetbrains.skia.Image
 import org.koin.core.context.startKoin
 import su.kidoz.postest.data.security.StorageBootstrap
+import su.kidoz.postest.data.security.StorageMode
 import su.kidoz.postest.di.appModules
 import su.kidoz.postest.ui.screens.RecoveryKeyContent
 import su.kidoz.postest.ui.screens.StorageScreen
@@ -163,8 +164,8 @@ fun main() {
                 Menu("Storage") {
                     Item(
                         "Show Recovery Key...",
-                        enabled = storageState == StorageState.Ready,
-                        onClick = { recoveryKey = bootstrap.current?.cipher?.recoveryKey() },
+                        enabled = storageState == StorageState.Ready && bootstrap.current?.mode == StorageMode.ENCRYPTED,
+                        onClick = { recoveryKey = bootstrap.current?.codec?.recoveryKey() },
                     )
                 }
                 Menu("Help") {
@@ -184,6 +185,7 @@ fun main() {
                         onRetry = { storageController.unlock() },
                         onRecover = { storageController.unlock(it) },
                         onContinue = storageController::acknowledgeRecoveryKey,
+                        onChooseMode = storageController::chooseStorageMode,
                     )
                 }
             }

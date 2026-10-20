@@ -7,9 +7,9 @@ enum class StorageProblem(
 ) {
     KEY_STORE_UNAVAILABLE("The OS credential store is locked or unavailable. Unlock it and retry."),
     KEY_MISSING("The database key is missing from the OS credential store. Enter your saved recovery key."),
-    INVALID_DATA("The database could not be authenticated. Check your recovery key and database backup."),
+    INVALID_DATA("The database could not be validated. Check your database backup and, for encrypted storage, your recovery key."),
     ALREADY_OPEN("Another Postest instance is using this storage. Close it and retry."),
-    MIGRATION_FAILED("Protected storage could not be prepared. Your existing database has been retained."),
+    MIGRATION_FAILED("Storage could not be prepared. Your existing database has been retained."),
     LEGACY_CLEANUP_FAILED(
         "Encrypted storage is ready, but the old plaintext database could not be removed. Close other database tools and retry.",
     ),

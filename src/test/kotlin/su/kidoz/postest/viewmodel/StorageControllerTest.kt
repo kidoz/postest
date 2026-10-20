@@ -11,13 +11,62 @@ import su.kidoz.postest.data.security.ProtectedStorage
 import su.kidoz.postest.data.security.RecordCipher
 import su.kidoz.postest.data.security.StorageBootstrap
 import su.kidoz.postest.data.security.StorageException
+import su.kidoz.postest.data.security.StorageMode
 import su.kidoz.postest.data.security.StorageProblem
+import su.kidoz.postest.data.security.StorageSetupRequiredException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class StorageControllerTest {
+    @Test
+    fun `first run offers a choice and plaintext opens without recovery setup`() =
+        runTest {
+            val storage = mockk<ProtectedStorage> { every { needsRecoveryAcknowledgement } returns false }
+            val bootstrap =
+                mockk<StorageBootstrap> {
+                    every { open(null, null) } throws StorageSetupRequiredException()
+                    every { open(null, StorageMode.UNENCRYPTED) } returns storage
+                }
+            val controller = StorageController(bootstrap, this, StandardTestDispatcher(testScheduler))
+            controller.unlock()
+            advanceUntilIdle()
+            assertEquals(StorageState.ChooseMode, controller.state.value)
+            controller.chooseStorageMode(StorageMode.UNENCRYPTED)
+            advanceUntilIdle()
+            assertEquals(StorageState.Ready, controller.state.value)
+            verify(exactly = 0) { storage.codec }
+            controller.chooseStorageMode(StorageMode.ENCRYPTED)
+            controller.acknowledgeRecoveryKey()
+            advanceUntilIdle()
+            verify(exactly = 0) { bootstrap.open(null, StorageMode.ENCRYPTED) }
+            verify(exactly = 0) { storage.acknowledgeRecoveryKey() }
+        }
+
+    @Test
+    fun `selecting encryption requires recovery acknowledgement`() =
+        runTest {
+            val cipher = RecordCipher("test-vault", ByteArray(32) { it.toByte() })
+            val storage =
+                mockk<ProtectedStorage> {
+                    every { needsRecoveryAcknowledgement } returns true
+                    every { codec } returns cipher
+                }
+            val bootstrap =
+                mockk<StorageBootstrap> {
+                    every { open(null, null) } throws StorageSetupRequiredException()
+                    every { open(null, StorageMode.ENCRYPTED) } returns storage
+                }
+            val controller = StorageController(bootstrap, this, StandardTestDispatcher(testScheduler))
+            controller.unlock()
+            advanceUntilIdle()
+            controller.chooseStorageMode(StorageMode.ENCRYPTED)
+            advanceUntilIdle()
+            assertIs<StorageState.RecoverySetup>(controller.state.value)
+            cipher.close()
+        }
+
     @Test
     fun `locked storage stays blocked until retry succeeds`() =
         runTest {
@@ -40,7 +89,7 @@ class StorageControllerTest {
             val storage =
                 mockk<ProtectedStorage> {
                     every { needsRecoveryAcknowledgement } returns true
-                    every { this@mockk.cipher } returns cipher
+                    every { this@mockk.codec } returns cipher
                     every { acknowledgeRecoveryKey() } returns Unit
                 }
             val bootstrap =

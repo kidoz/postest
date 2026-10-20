@@ -10,13 +10,16 @@ import java.sql.DriverManager
 
 class ProtectedStorage internal constructor(
     val driver: SqlDriver,
-    val cipher: RecordCipher,
+    val codec: RecordCodec,
     private val path: Path,
     private val lock: FileLock,
     private val lockChannel: FileChannel,
     var needsRecoveryAcknowledgement: Boolean,
 ) : AutoCloseable {
+    val mode: StorageMode get() = codec.mode
+
     fun acknowledgeRecoveryKey() {
+        check(mode == StorageMode.ENCRYPTED)
         DriverManager.getConnection("jdbc:sqlite:$path").use { connection ->
             connection.createStatement().use { it.executeUpdate("UPDATE ProtectedStorage SET recovery_acknowledged = 1") }
         }
@@ -27,7 +30,7 @@ class ProtectedStorage internal constructor(
         try {
             driver.close()
         } finally {
-            cipher.close()
+            codec.close()
             lock.release()
             lockChannel.close()
         }

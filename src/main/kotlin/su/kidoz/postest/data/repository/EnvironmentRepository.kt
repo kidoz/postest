@@ -6,7 +6,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import su.kidoz.postest.data.db.PostestDatabase
-import su.kidoz.postest.data.security.RecordCipher
+import su.kidoz.postest.data.security.RecordCodec
 import su.kidoz.postest.domain.model.Environment
 import su.kidoz.postest.domain.model.EnvironmentSnapshot
 import su.kidoz.postest.domain.model.Variable
@@ -16,7 +16,7 @@ import su.kidoz.postest.domain.port.EnvironmentRepository as EnvironmentReposito
 
 class EnvironmentRepository(
     private val database: PostestDatabase,
-    private val cipher: RecordCipher,
+    private val codec: RecordCodec,
 ) : EnvironmentRepositoryPort {
     private val queries = database.postestQueries
     override val snapshot: Flow<EnvironmentSnapshot> = queries.observeEnvironmentChanges().asFlow().map { readSnapshot() }
@@ -34,14 +34,14 @@ class EnvironmentRepository(
                         .map { row ->
                             Environment(
                                 id = row.id,
-                                name = cipher.decrypt("Environment", row.id, "name", row.name),
+                                name = codec.decode("Environment", row.id, "name", row.name),
                                 isActive = row.is_active == 1L,
                                 variables =
                                     variables[row.id].orEmpty().map { variable ->
                                         Variable(
                                             id = variable.id,
-                                            key = cipher.decrypt("EnvironmentVariable", variable.id, "key", variable.key),
-                                            value = cipher.decrypt("EnvironmentVariable", variable.id, "value", variable.value_),
+                                            key = codec.decode("EnvironmentVariable", variable.id, "key", variable.key),
+                                            value = codec.decode("EnvironmentVariable", variable.id, "value", variable.value_),
                                             type = if (variable.is_secret == 1L) VariableType.SECRET else VariableType.DEFAULT,
                                             enabled = variable.enabled == 1L,
                                         )
@@ -68,7 +68,7 @@ class EnvironmentRepository(
                 if (environment.isActive) queries.deactivateAllEnvironments()
                 queries.insertEnvironment(
                     id = environment.id,
-                    name = cipher.encrypt("Environment", environment.id, "name", environment.name),
+                    name = codec.encode("Environment", environment.id, "name", environment.name),
                     is_active = if (environment.isActive) 1 else 0,
                     created_at = System.currentTimeMillis(),
                     updated_at = System.currentTimeMillis(),
@@ -83,7 +83,7 @@ class EnvironmentRepository(
             database.transaction {
                 queries.updateEnvironment(
                     id = environment.id,
-                    name = cipher.encrypt("Environment", environment.id, "name", environment.name),
+                    name = codec.encode("Environment", environment.id, "name", environment.name),
                     updated_at = System.currentTimeMillis(),
                 )
                 queries.deleteVariablesByEnvironmentId(environment.id)
@@ -119,8 +119,8 @@ class EnvironmentRepository(
             queries.insertEnvironmentVariable(
                 id = id,
                 environment_id = environment.id,
-                key = cipher.encrypt("EnvironmentVariable", id, "key", variable.key),
-                value_ = cipher.encrypt("EnvironmentVariable", id, "value", variable.value),
+                key = codec.encode("EnvironmentVariable", id, "key", variable.key),
+                value_ = codec.encode("EnvironmentVariable", id, "value", variable.value),
                 is_secret = if (variable.isSecret) 1 else 0,
                 enabled = if (variable.enabled) 1 else 0,
             )

@@ -12,10 +12,14 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import su.kidoz.postest.data.security.StorageBootstrap
 import su.kidoz.postest.data.security.StorageException
+import su.kidoz.postest.data.security.StorageMode
 import su.kidoz.postest.data.security.StorageProblem
+import su.kidoz.postest.data.security.StorageSetupRequiredException
 
 sealed interface StorageState {
     data object Opening : StorageState
+
+    data object ChooseMode : StorageState
 
     data class Blocked(
         val problem: StorageProblem,
@@ -40,20 +44,30 @@ class StorageController(
     val state = mutableState.asStateFlow()
     private val operation = Mutex()
 
-    fun unlock(recoveryKey: String? = null) {
+    fun unlock(recoveryKey: String? = null) = open(recoveryKey, null)
+
+    fun chooseStorageMode(mode: StorageMode) = open(null, mode)
+
+    private fun open(
+        recoveryKey: String?,
+        initialMode: StorageMode?,
+    ) {
         scope.launch {
             operation.withLock {
+                if (initialMode != null && mutableState.value != StorageState.ChooseMode) return@withLock
                 mutableState.value = StorageState.Opening
                 try {
-                    val storage = withContext(ioDispatcher) { bootstrap.open(recoveryKey) }
+                    val storage = withContext(ioDispatcher) { bootstrap.open(recoveryKey, initialMode) }
                     mutableState.value =
                         if (storage.needsRecoveryAcknowledgement) {
-                            StorageState.RecoverySetup(storage.cipher.recoveryKey())
+                            StorageState.RecoverySetup(checkNotNull(storage.codec.recoveryKey()))
                         } else {
                             StorageState.Ready
                         }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
+                } catch (_: StorageSetupRequiredException) {
+                    mutableState.value = StorageState.ChooseMode
                 } catch (error: StorageException) {
                     mutableState.value = StorageState.Blocked(error.problem)
                 } catch (_: Exception) {
@@ -66,6 +80,7 @@ class StorageController(
     fun acknowledgeRecoveryKey() {
         scope.launch {
             operation.withLock {
+                if (mutableState.value !is StorageState.RecoverySetup) return@withLock
                 mutableState.value = StorageState.Opening
                 try {
                     withContext(ioDispatcher) { checkNotNull(bootstrap.current).acknowledgeRecoveryKey() }

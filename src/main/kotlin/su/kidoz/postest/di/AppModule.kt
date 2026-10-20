@@ -21,7 +21,7 @@ import su.kidoz.postest.data.repository.HistoryRepository
 import su.kidoz.postest.data.repository.SessionRepository
 import su.kidoz.postest.data.security.PlatformKeyStore
 import su.kidoz.postest.data.security.ProtectedStorage
-import su.kidoz.postest.data.security.RecordCipher
+import su.kidoz.postest.data.security.RecordCodec
 import su.kidoz.postest.data.security.StorageBootstrap
 import su.kidoz.postest.domain.port.CollectionFiles
 import su.kidoz.postest.domain.port.DraftSessionStore
@@ -55,7 +55,7 @@ val databaseModule =
         single { StorageBootstrap(File(System.getProperty("user.home"), ".postest").toPath(), PlatformKeyStore()) }
         single<ProtectedStorage> { checkNotNull(get<StorageBootstrap>().current) { "Protected storage has not been unlocked" } }
         single<SqlDriver> { get<ProtectedStorage>().driver }
-        single<RecordCipher> { get<ProtectedStorage>().cipher }
+        single<RecordCodec> { get<ProtectedStorage>().codec }
 
         single<PostestDatabase> {
             PostestDatabase(get())

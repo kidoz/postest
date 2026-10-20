@@ -12,13 +12,14 @@ import javax.crypto.spec.SecretKeySpec
 class RecordCipher(
     private val vaultId: String,
     key: ByteArray,
-) : AutoCloseable {
+) : RecordCodec {
+    override val mode = StorageMode.ENCRYPTED
     private val key = key.copyOf().also { require(it.size == KEY_BYTES) }
     private val random = SecureRandom()
     private var closed = false
 
     @Synchronized
-    fun encrypt(
+    override fun encode(
         table: String,
         rowId: String,
         column: String,
@@ -36,7 +37,7 @@ class RecordCipher(
     }
 
     @Synchronized
-    fun decrypt(
+    override fun decode(
         table: String,
         rowId: String,
         column: String,
@@ -79,7 +80,7 @@ class RecordCipher(
         }
 
     @Synchronized
-    fun recoveryKey(): String {
+    override fun recoveryKey(): String {
         check(!closed)
         return Base64.getUrlEncoder().withoutPadding().encodeToString(key)
     }

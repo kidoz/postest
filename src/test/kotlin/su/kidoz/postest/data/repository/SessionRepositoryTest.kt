@@ -85,7 +85,7 @@ class SessionRepositoryTest {
                 """{"version":1,"tabs":[],"activeTabId":null}""",
             ).forEach { stored ->
                 database.postestQueries.saveWorkspaceSession(
-                    TestDatabaseFactory.cipher().encrypt("WorkspaceSession", "current", "snapshot_json", stored),
+                    TestDatabaseFactory.cipher().encode("WorkspaceSession", "current", "snapshot_json", stored),
                 )
                 val failure = assertFailsWith<IllegalStateException> { repository.load() }
                 assertEquals("Saved drafts are invalid or unsupported", failure.message)
@@ -93,7 +93,7 @@ class SessionRepositoryTest {
                 repository.save(replacement)
                 assertEquals(
                     stored,
-                    TestDatabaseFactory.cipher().decrypt(
+                    TestDatabaseFactory.cipher().decode(
                         "WorkspaceSession",
                         "backup",
                         "snapshot_json",

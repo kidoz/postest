@@ -9,7 +9,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import su.kidoz.postest.data.db.PostestDatabase
-import su.kidoz.postest.data.security.RecordCipher
+import su.kidoz.postest.data.security.RecordCodec
 import su.kidoz.postest.data.security.StorageException
 import su.kidoz.postest.domain.model.HistoryEntry
 import su.kidoz.postest.domain.model.HttpRequest
@@ -22,7 +22,7 @@ private val logger = KotlinLogging.logger {}
 
 class HistoryRepository(
     private val database: PostestDatabase,
-    private val cipher: RecordCipher,
+    private val codec: RecordCodec,
 ) : HistoryRepositoryPort {
     private val json = Json { ignoreUnknownKeys = true }
     override val history: Flow<List<HistoryEntry>> =
@@ -45,15 +45,15 @@ class HistoryRepository(
                             id = dbEntry.id,
                             request =
                                 json.decodeFromString<HttpRequest>(
-                                    cipher.decrypt("HistoryEntry", dbEntry.id, "request_json", dbEntry.request_json),
+                                    codec.decode("HistoryEntry", dbEntry.id, "request_json", dbEntry.request_json),
                                 ),
                             response =
                                 dbEntry.response_json?.let {
-                                    json.decodeFromString<HttpResponse>(cipher.decrypt("HistoryEntry", dbEntry.id, "response_json", it))
+                                    json.decodeFromString<HttpResponse>(codec.decode("HistoryEntry", dbEntry.id, "response_json", it))
                                 },
                             errorMessage =
                                 dbEntry.error_message?.let {
-                                    cipher.decrypt(
+                                    codec.decode(
                                         "HistoryEntry",
                                         dbEntry.id,
                                         "error_message",
@@ -85,17 +85,17 @@ class HistoryRepository(
             database.transaction {
                 database.postestQueries.insertHistoryEntry(
                     id = entryId,
-                    request_json = cipher.encrypt("HistoryEntry", entryId, "request_json", json.encodeToString(storedEntry.request)),
+                    request_json = codec.encode("HistoryEntry", entryId, "request_json", json.encodeToString(storedEntry.request)),
                     response_json =
                         storedEntry.response?.let {
-                            cipher.encrypt(
+                            codec.encode(
                                 "HistoryEntry",
                                 entryId,
                                 "response_json",
                                 json.encodeToString(it),
                             )
                         },
-                    error_message = storedEntry.errorMessage?.let { cipher.encrypt("HistoryEntry", entryId, "error_message", it) },
+                    error_message = storedEntry.errorMessage?.let { codec.encode("HistoryEntry", entryId, "error_message", it) },
                     duration = storedEntry.duration,
                     timestamp = storedEntry.timestamp,
                 )
