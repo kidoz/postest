@@ -229,7 +229,7 @@ class StorageBootstrapTest {
             StorageBootstrap(directory, keys).open().close()
             Files.move(
                 directory.resolve(StorageBootstrap.DATABASE_NAME),
-                directory.resolve("postest-protected.pending.db"),
+                directory.resolve("${StorageBootstrap.DATABASE_NAME}.pending"),
                 StandardCopyOption.ATOMIC_MOVE,
             )
             StorageBootstrap(directory, keys).open().close()
@@ -328,6 +328,80 @@ class StorageBootstrapTest {
                 repository.save(session)
                 assertEquals(session, repository.load())
             }
+        }
+    }
+
+    @Test
+    fun `previous encrypted filename upgrades without changing its key and retains an encrypted backup`() {
+        withDirectory { directory ->
+            val keys = MemoryKeyStore()
+            val marker = "EXAMPLE-previous-version"
+            val recovery =
+                StorageBootstrap(directory, keys).open().use { storage ->
+                    PostestDatabase(
+                        storage.driver,
+                    ).postestQueries.saveWorkspaceSession(storage.cipher.encrypt("WorkspaceSession", "current", "snapshot_json", marker))
+                    storage.cipher.recoveryKey()
+                }
+            val previous = directory.resolve("postest-protected.db")
+            Files.move(directory.resolve(StorageBootstrap.DATABASE_NAME), previous)
+            StorageBootstrap(directory, keys).open().use { storage ->
+                assertEquals(recovery, storage.cipher.recoveryKey())
+                val value = PostestDatabase(storage.driver).postestQueries.selectWorkspaceSession().executeAsOne()
+                assertEquals(marker, storage.cipher.decrypt("WorkspaceSession", "current", "snapshot_json", value))
+            }
+            assertEquals(1, keys.writes)
+            assertFalse(Files.exists(previous))
+            val backup = directory.resolve("posttest.db.bak")
+            assertTrue(Files.exists(backup))
+            assertFalse(Files.readAllBytes(backup).toString(Charsets.ISO_8859_1).contains(marker))
+        }
+    }
+
+    @Test
+    fun `older completed staging filename is recovered and existing backups are preserved`() {
+        withDirectory { directory ->
+            val keys = MemoryKeyStore()
+            StorageBootstrap(directory, keys).open().close()
+            Files.move(directory.resolve(StorageBootstrap.DATABASE_NAME), directory.resolve("postest-protected.pending.db"))
+            val backup = directory.resolve("posttest.db.bak")
+            Files.writeString(backup, "EXAMPLE-existing-backup")
+            StorageBootstrap(directory, keys).open().close()
+            assertEquals("EXAMPLE-existing-backup", Files.readString(backup))
+            assertTrue(Files.exists(directory.resolve("posttest.db.bak.1")))
+            assertFalse(Files.exists(directory.resolve("postest-protected.pending.db")))
+            assertEquals(1, keys.writes)
+        }
+    }
+
+    @Test
+    fun `missing key for previous filename preserves original and never creates a fresh database`() {
+        withDirectory { directory ->
+            val keys = MemoryKeyStore()
+            StorageBootstrap(directory, keys).open().close()
+            val previous = directory.resolve("postest-protected.db")
+            Files.move(directory.resolve(StorageBootstrap.DATABASE_NAME), previous)
+            keys.keys.clear()
+            assertEquals(StorageProblem.KEY_MISSING, assertFailsWith<StorageException> { StorageBootstrap(directory, keys).open() }.problem)
+            assertTrue(Files.exists(previous))
+            assertFalse(Files.exists(directory.resolve(StorageBootstrap.DATABASE_NAME)))
+            assertEquals(1, keys.writes)
+        }
+    }
+
+    @Test
+    fun `restoring an upgrade backup does not remove an unrelated legacy database`() {
+        withDirectory { directory ->
+            val keys = MemoryKeyStore()
+            JdbcSqliteDriver("jdbc:sqlite:${directory.resolve("postest.db")}").use { PostestDatabase.Schema.create(it) }
+            StorageBootstrap(directory, keys).open().close()
+            val restore = directory.resolve("restore")
+            Files.createDirectories(restore)
+            Files.copy(directory.resolve("posttest.db.bak"), restore.resolve(StorageBootstrap.DATABASE_NAME))
+            val unrelated = restore.resolve("postest.db")
+            Files.writeString(unrelated, "EXAMPLE-unrelated-legacy")
+            StorageBootstrap(restore, keys).open().close()
+            assertEquals("EXAMPLE-unrelated-legacy", Files.readString(unrelated))
         }
     }
 

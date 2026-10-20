@@ -91,7 +91,7 @@ fun RecoveryKeyContent(key: String) {
                 "If the OS credential entry is lost, this key is required to recover your data.",
         )
         Text(
-            "Back up postest-protected.db while Postest is closed. " +
+            "Back up posttest.db while Postest is closed. " +
                 "Keep this key with your recovery records when moving to another computer.",
         )
     }

@@ -37,20 +37,39 @@ class StorageBootstrap(
         var opened = false
         try {
             val path = directory.resolve(DATABASE_NAME)
-            val stage = directory.resolve("postest-protected.pending.db")
+            val stage = directory.resolve("$DATABASE_NAME.pending")
             val legacy = directory.resolve("postest.db")
+            var previous: Path? = null
             if (!Files.exists(path)) {
+                previous = previousDatabase()
                 // A stage is never used for live writes. Complete stages are recoverable after a crash.
-                if (Files.exists(stage) && isComplete(stage)) {
-                    validateExisting(stage, recoveryKey).close()
-                    promote(stage, path)
-                } else {
+                if (!Files.exists(stage) || !isComplete(stage)) {
                     removeStage(stage)
-                    createStage(stage, legacy)
-                    promote(stage, path)
+                    if (previous != null) {
+                        validateExisting(previous, recoveryKey).close()
+                        // VACUUM INTO takes a consistent snapshot, including committed WAL content.
+                        connect(previous).use { connection ->
+                            connection.prepareStatement("VACUUM INTO ?").use {
+                                it.setString(1, stage.toAbsolutePath().toString())
+                                it.execute()
+                            }
+                        }
+                    } else {
+                        createStage(stage, legacy)
+                    }
                 }
+                validateExisting(stage, recoveryKey).close()
+                if (previous != null && vaultId(previous) != vaultId(stage)) {
+                    throw StorageException(StorageProblem.MIGRATION_FAILED)
+                }
+                if (previous != null || Files.exists(legacy)) backupStage(stage)
+                promote(stage, path)
             }
             cipher = validateExisting(path, recoveryKey)
+            previous?.let {
+                removeStage(it)
+                syncDirectory()
+            }
             retireLegacy(path, legacy)
             val acknowledged =
                 connect(path).use { connection ->
@@ -84,6 +103,36 @@ class StorageBootstrap(
         current?.close()
         current = null
     }
+
+    private fun previousDatabase(): Path? {
+        val previous = directory.resolve("postest-protected.db")
+        if (Files.exists(previous)) return previous
+        return directory.resolve("postest-protected.pending.db").takeIf { Files.exists(it) && isComplete(it) }
+    }
+
+    private fun backupStage(stage: Path) {
+        var backup = directory.resolve("$DATABASE_NAME.bak")
+        var index = 1
+        while (Files.exists(backup)) backup = directory.resolve("$DATABASE_NAME.bak.${index++}")
+        val pending = directory.resolve("$DATABASE_NAME.bak.pending")
+        removeStage(pending)
+        Files.copy(stage, pending)
+        // A restored backup must not retire another installation's plaintext source.
+        connect(pending).use { connection ->
+            connection.createStatement().use { it.executeUpdate("UPDATE ProtectedStorage SET legacy_cleanup_pending = 0") }
+        }
+        promote(pending, backup)
+    }
+
+    private fun vaultId(path: Path): String =
+        connect(path).use { connection ->
+            connection.createStatement().use { query ->
+                query.executeQuery("SELECT vault_id FROM ProtectedStorage WHERE id = 1").use {
+                    check(it.next())
+                    it.getString(1)
+                }
+            }
+        }
 
     private fun createStage(
         stage: Path,
@@ -365,7 +414,7 @@ class StorageBootstrap(
     private fun connect(path: Path): Connection = DriverManager.getConnection("jdbc:sqlite:$path")
 
     companion object {
-        const val DATABASE_NAME = "postest-protected.db"
+        const val DATABASE_NAME = "posttest.db"
         private const val VERIFIER = "Postest protected storage version 1"
     }
 }
